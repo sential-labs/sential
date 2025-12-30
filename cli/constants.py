@@ -112,90 +112,22 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguages, LanguagesHeuristics]] = 
     },
 }
 
-IGNORE_DIRS = {
-    # Version control
-    ".git",
-    ".svn",
-    ".hg",
-    ".bzr",
-    ".fossil",
-    # Python
-    ".venv",
-    "venv",
-    "env",
-    ".env",
-    "ENV",
-    "__pycache__",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".tox",
-    ".coverage",
-    ".hypothesis",
-    ".ruff_cache",
-    "htmlcov",
-    # Node.js / JavaScript
-    "node_modules",
-    ".npm",
-    ".yarn",
-    ".yarn-cache",
-    ".pnpm-store",
-    ".next",
-    ".nuxt",
-    ".astro",
-    # IDEs and editors
-    ".idea",
-    ".vscode",
-    ".vs",
-    ".eclipse",
-    ".settings",
-    ".metadata",
-    ".sublime-project",
-    ".sublime-workspace",
-    ".vim",
-    ".emacs.d",
-    # Build artifacts and compiled code (common across languages)
-    "build",
-    "dist",
-    "target",
-    "out",
-    "bin",
-    "obj",
-    ".gradle",
-    ".mvn",
-    "cmake-build-debug",
-    "cmake-build-release",
-    "cmake-build",
-    ".deps",
-    ".libs",
-    "Debug",
-    "Release",
-    ".classpath",
-    ".project",
-    # Package managers and dependencies
-    "vendor",
-    ".bundle",
-    "bower_components",
-    ".cargo",
-    # OS and system files
-    ".DS_Store",
-    "Thumbs.db",
-    ".Spotlight-V100",
-    ".Trashes",
-    # Temporary and cache
-    ".cache",
-    ".tmp",
-    ".temp",
-    ".log",
-    ".logs",
-    "tmp",
-    "temp",
-    # Documentation builds
-    "_build",
-    ".doctrees",
-    "site",
-    # Infrastructure and deployment
-    ".terraform",
-    ".vagrant",
-    ".docker",
-    ".k8s",
-}
+CTAGS_KINDS = frozenset(
+    {
+        # The Core Logic
+        "class",
+        "method",
+        "function",
+        # The Data Structures
+        "struct",
+        "enum",
+        "union",
+        "interface",
+        "typedef",
+        "type",
+        # The Hierarchy (Crucial for C#/C++)
+        "namespace",
+        "module",
+        "package",
+    }
+)

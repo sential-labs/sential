@@ -1,9 +1,8 @@
 """
-Utility functions
+General utility functions for the CLI application.
 """
 
 from rich.console import Console
-from rich.style import Style
 
 console = Console()
 
@@ -13,7 +12,6 @@ def debug(
     sep: str = " ",
     end: str = "\n",
 ) -> None:
-    print("Sssssssss")
     """Print debug message with orange bold formatting."""
     if not values:
         print(end=end)
