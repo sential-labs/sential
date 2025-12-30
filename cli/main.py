@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
-from typing import Dict, Generator, List, Annotated
+from typing import Generator, List, Annotated, Tuple
 import typer
 from rich import print as pr
 from rich.progress import (
@@ -15,6 +15,7 @@ from rich.progress import (
     TextColumn,
     BarColumn,
     TaskProgressColumn,
+    TimeRemainingColumn,
 )
 import inquirer  # type: ignore
 from ctags import get_ctags_path
@@ -80,10 +81,10 @@ def main(
     pr(f"[green]Scanning: {path}...[/green]\n")
 
     scopes = select_scope(path, SupportedLanguages(language))
-    inventory_file = get_final_inventory_file(
+    inventory_file, file_count = get_final_inventory_file(
         path, scopes, SupportedLanguages(language)
     )
-    tags_map = generate_tags_map(path, inventory_file)
+    tags_map = generate_tags_jsonl(path, inventory_file, file_count)
     print(tags_map)
 
 
@@ -189,13 +190,12 @@ def make_language_selection() -> SupportedLanguages:
 
 def get_final_inventory_file(
     base_path: FilePath, scopes: List[FilePath], language: SupportedLanguages
-) -> FilePath:
+) -> Tuple[FilePath, int]:
     """
     1. Asks Git for files ONLY in the selected scopes.
     2. Filters them by the language's allowed extensions.
     """
     pr("\n[bold cyan]🔍 Sifting through your codebase...[/bold cyan]")
-    pr("[dim]Filtering files by language extensions (the Language Sieve)[/dim]\n")
 
     # Get the allowed extensions (e.g., {'.js', '.ts'})
     allowed_extensions = LANGUAGES_HEURISTICS[language]["extensions"]
@@ -211,6 +211,8 @@ def get_final_inventory_file(
         "--",
     ] + scopes
 
+    total_files = count_git_files(base_path, cmd)
+
     file_count = 0
     filtered_count = 0
 
@@ -220,10 +222,11 @@ def get_final_inventory_file(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
+            TimeRemainingColumn(),
         ) as progress:
             task = progress.add_task(
                 "[cyan]Scanning files and applying language filter...",
-                total=None,  # Indeterminate
+                total=total_files,
             )
 
             # Stream the results
@@ -240,18 +243,18 @@ def get_final_inventory_file(
                         file_path = file_path.strip()
                         file_count += 1
 
+                        # Advance the raw counter
+                        progress.update(task, advance=1)
+
                         # SIEVE 2: Extension Check
                         # Check if file ends with one of our valid extensions
                         # We use endswith because extensions usually include the dot
                         if any(file_path.endswith(ext) for ext in allowed_extensions):
                             tmp.write(f"{file_path}\n")
                             filtered_count += 1
-
-                        # Update progress every 10 files for performance
-                        if file_count % 10 == 0:
                             progress.update(
                                 task,
-                                description=f"[cyan]Found {filtered_count} matching files (scanned {file_count})...",
+                                description=f"[cyan]Kept {filtered_count} {language} files...",
                             )
 
                 process.wait()
@@ -259,32 +262,38 @@ def get_final_inventory_file(
             # Final update
             progress.update(
                 task,
-                description=f"[green]✓ Filtered {filtered_count} files from {file_count} total",
-                completed=1,
-                total=1,
+                description=f"[green]✓ Found {filtered_count} valid files",
+                completed=total_files,
             )
 
-        tmp_path = tmp.name
-        return tmp_path
+        return tmp.name, filtered_count
 
 
-def generate_tags_map(base_path: str, tmp_path: FilePath) -> Dict[str, List[str]]:
-    """
-    Runs ctags on the file list and returns a dictionary:
-    { "src/auth.ts": ["class Login", "func validate"] }
-    """
+def generate_tags_jsonl(
+    base_path: str, inventory_path: FilePath, total_files: int
+) -> FilePath:
+
+    output_path = os.path.join(tempfile.gettempdir(), "sential_payload.jsonl")
+
     pr("\n[bold magenta]🏷️  Extracting code symbols...[/bold magenta]")
-    pr("[dim]Running ctags to discover classes, functions, and more[/dim]\n")
 
-    # We use Universal Ctags specific flags:
-    # -f -         : Output to stdout
-    # --output-format=json : Return JSON lines (easiest to parse)
-    # --fields=+n  : Include line numbers
     ctags = get_ctags_path()
-    cmd = [ctags, "--output-format=json", "--fields=+n", "-f", "-", "-L", "-"]
+    cmd = [
+        ctags,
+        "--output-format=json",
+        "--sort=no",
+        "--fields=+n",
+        "-f",
+        "-",
+        "-L",
+        "-",
+    ]
 
-    tree_map: Dict[str, List[str]] = {}
+    # We accumulate the tags for the current file only
+    current_file_path = None
+    current_tags: List[str] = []
     tag_count = 0
+    success = False
 
     try:
         with Progress(
@@ -292,67 +301,123 @@ def generate_tags_map(base_path: str, tmp_path: FilePath) -> Dict[str, List[str]
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
+            TimeRemainingColumn(),
         ) as progress:
+
             task = progress.add_task(
-                "[magenta]Parsing code symbols from files...",
-                total=None,  # Indeterminate
+                f"[magenta]Parsing symbols from {total_files} files...", total=None
             )
+            with open(output_path, "w", encoding="utf-8") as out_f:
+                with open(inventory_path, "r", encoding="utf-8") as in_f:
+                    # Use Popen to stream the output
+                    with subprocess.Popen(
+                        cmd,
+                        cwd=base_path,
+                        stdin=in_f,  # Feed the file list via stdin
+                        stdout=subprocess.PIPE,  # Catch output via pipe
+                        text=True,
+                        bufsize=1,
+                    ) as process:
 
-            # Run ctags on the file containing the list of files
-            with open(tmp_path, "r", encoding="utf-8") as f:
-                process = subprocess.run(
-                    cmd,
-                    cwd=base_path,
-                    stdin=f,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
+                        if process.stdout:
+                            for line in process.stdout:
+                                try:
+                                    tag = json.loads(line)
+                                    path = tag.get("path")
+                                    kind = tag.get("kind")
+                                    name = tag.get("name")
 
-                for line in process.stdout.splitlines():
-                    try:
-                        tag = json.loads(line)
-                        # tag structure: {'name': 'Login', 'path': 'src/auth.ts', 'kind': 'class', ...}
+                                    if not path or not name or kind not in CTAGS_KINDS:
+                                        continue
 
-                        path = tag.get("path")
-                        name = tag.get("name")
-                        kind = tag.get("kind", "unknown")
+                                    if path != current_file_path:
+                                        if current_file_path:
+                                            record = {
+                                                "path": current_file_path,
+                                                "tags": current_tags,
+                                            }
+                                            out_f.write(json.dumps(record) + "\n")
+                                        # Reset for new file
+                                        current_file_path = path
+                                        current_tags = []
 
-                        if path and name and kind in CTAGS_KINDS:
-                            if path not in tree_map:
-                                tree_map[path] = []
+                                    # Add tag to current buffer
+                                    current_tags.append(f"{kind} {name}")
+                                    tag_count += 1
 
-                            # Store a readable signature: "class Login"
-                            tree_map[path].append(f"{kind} {name}")
-                            tag_count += 1
+                                    # Tick the spinner occasionally
+                                    if tag_count % 100 == 0:
+                                        progress.update(
+                                            task,
+                                            description=f"[magenta]Extracted {tag_count} symbols...",
+                                        )
 
-                            # Update progress every 10 tags for performance
-                            if tag_count % 10 == 0:
-                                progress.update(
-                                    task,
-                                    description=f"[magenta]Found {tag_count} symbols so far...",
-                                )
+                                except json.JSONDecodeError:
+                                    continue
 
-                    except json.JSONDecodeError:
-                        continue
+                        # Write the last file's tags if any
+                        if current_file_path:
+                            record = {
+                                "path": current_file_path,
+                                "tags": current_tags,
+                            }
+                            out_f.write(json.dumps(record) + "\n")
 
-            # Final update
             progress.update(
                 task,
-                description=f"[green]✓ Extracted {tag_count} symbols from {len(tree_map)} files",
-                completed=1,
-                total=1,
+                description=f"[green]✓ Extracted {tag_count} symbols",
+                completed=100,
+                total=100,
             )
+            success = True
 
+    except KeyboardInterrupt as exc:
+        pr("\n[yellow]Interrupted by user[/yellow]")
+        raise typer.Exit() from exc
     except Exception as e:
-        pr(f"[bold red]Error running ctags: {e}[/bold red]")
+        pr(f"[bold red]Error: {e}[/bold red]")
         raise typer.Exit()
 
     finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+        # Always clean up inventory file
+        if os.path.exists(inventory_path):
+            try:
+                os.remove(inventory_path)
+            except OSError:
+                pass  # Ignore errors during cleanup
 
-    return tree_map
+        # Clean up output file if operation was interrupted or failed
+        if not success and os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+            except OSError:
+                pass  # Ignore errors during cleanup
+
+    return output_path
+
+
+def count_git_files(base_path: str, cmd: List[str]) -> int:
+    """
+    Counts lines in the output stream without loading the file into memory.
+    Memory Usage: Constant (Zero).
+    """
+    count = 0
+    # Use Popen to open a pipe, not a buffer
+    with subprocess.Popen(
+        cmd,
+        cwd=base_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        bufsize=1,  # Line buffered
+    ) as process:
+
+        # Iterate over the stream directly
+        if process.stdout:
+            for _ in process.stdout:
+                count += 1
+
+    return count
 
 
 if __name__ == "__main__":
