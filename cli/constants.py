@@ -1,23 +1,23 @@
-from enum import StrEnum
-from typing import Final, Mapping, TypedDict
+"""
+Application-wide constants and configuration mappings.
+
+This module defines the core heuristics and configuration data used throughout
+the Sential CLI application. It includes language-specific manifest and extension
+definitions, ctags symbol kind filters, and universal context file patterns.
+"""
+
+from typing import Final, Mapping
+from models import SupportedLanguage, LanguagesHeuristics
 
 
-class SupportedLanguages(StrEnum):
-    PY = "Python"
-    JS = "JavaScript/TypeScript"
-    JAVA = "Java"
-    CS = "C#"
-    GO = "GO"
-    CPP = "C/C++"
-
-
-class LanguagesHeuristics(TypedDict):
-    manifests: frozenset[str]
-    extensions: frozenset[str]
-
-
-LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguages, LanguagesHeuristics]] = {
-    SupportedLanguages.PY: {
+# Language-specific heuristics for module discovery and file filtering.
+# This mapping associates each supported programming language with its
+# characteristic manifest files and source code extensions. It is used by
+# the discovery pipeline to identify modules and filter files during scanning.
+# The manifests are used to detect module roots (directories containing projects),
+# while extensions are used to filter source code files for ctags processing.
+LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
+    SupportedLanguage.PY: {
         "manifests": frozenset(
             {
                 "requirements.txt",
@@ -29,7 +29,7 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguages, LanguagesHeuristics]] = 
         ),
         "extensions": frozenset({".py", ".pyi"}),
     },
-    SupportedLanguages.JS: {
+    SupportedLanguage.JS: {
         "manifests": frozenset(
             {
                 "package.json",
@@ -45,7 +45,7 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguages, LanguagesHeuristics]] = 
             {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"}
         ),
     },
-    SupportedLanguages.JAVA: {
+    SupportedLanguage.JAVA: {
         "manifests": frozenset(
             {
                 "pom.xml",  # Maven
@@ -58,7 +58,7 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguages, LanguagesHeuristics]] = 
         ),
         "extensions": frozenset({".java", ".kt", ".scala", ".groovy"}),
     },
-    SupportedLanguages.CS: {
+    SupportedLanguage.CS: {
         "manifests": frozenset(
             {
                 ".csproj",
@@ -71,7 +71,7 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguages, LanguagesHeuristics]] = 
         ),
         "extensions": frozenset({".cs", ".fs", ".vb", ".cshtml", ".razor"}),
     },
-    SupportedLanguages.GO: {
+    SupportedLanguage.GO: {
         "manifests": frozenset(
             {
                 "go.mod",
@@ -82,7 +82,7 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguages, LanguagesHeuristics]] = 
         ),
         "extensions": frozenset({".go"}),
     },
-    SupportedLanguages.CPP: {
+    SupportedLanguage.CPP: {
         "manifests": frozenset(
             {
                 "cmakelists.txt",
@@ -111,7 +111,15 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguages, LanguagesHeuristics]] = 
     },
 }
 
-CTAGS_KINDS = frozenset(
+# Set of ctags symbol kinds that are extracted and included in the output.
+# This set defines which types of code symbols (classes, functions, etc.) are
+# considered valuable for context generation. Symbols with kinds not in this
+# set are filtered out during ctags processing to reduce noise and token usage.
+# The set includes:
+# - Core logic symbols: class, method, function
+# - Data structures: struct, enum, union, interface, typedef, type
+# - Hierarchy symbols: namespace, module, package
+CTAGS_KINDS: Final[frozenset[str]] = frozenset(
     {
         # The Core Logic
         "class",
@@ -131,9 +139,13 @@ CTAGS_KINDS = frozenset(
     }
 )
 
-# A static list of files that, if they exist, define the "Soul" of a project.
-# We check these regardless of the programming language.
-UNIVERSAL_CONTEXT_FILES: tuple[str, ...] = (
+# Universal context files that define the "soul" of a project.
+# This tuple contains filenames (case-insensitive) that are considered high-value
+# context files regardless of the target programming language. These files are
+# always included in the context extraction phase and are prioritized during
+# output generation. They include documentation, AI-specific instructions, and
+# infrastructure configuration files.
+UNIVERSAL_CONTEXT_FILES: Final[tuple[str, ...]] = (
     # Documentation & Intent (The "Why")
     "readme.md",
     "readme.txt",
