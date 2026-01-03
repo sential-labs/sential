@@ -1,3 +1,27 @@
+"""
+Interactive user prompts for the Sential CLI application.
+
+This module provides interactive terminal prompts that guide users through the
+configuration of Sential scans. It handles two main interactive flows:
+
+1. Language Selection: Prompts users to select a programming language when
+   not provided via command-line arguments.
+
+2. Scope Selection: Identifies potential modules in the repository and presents
+   them in a hierarchical tree structure, allowing users to select which modules
+   (scopes) to include in the scan. Automatically filters out redundant nested
+   child modules when a parent is selected.
+
+The module uses the `inquirer` library for interactive prompts and `rich` for
+formatted terminal output. It provides a `FileTreeBuilder` class for visualizing
+module hierarchies with ASCII tree characters.
+
+Dependencies:
+    - inquirer: Interactive terminal prompts
+    - rich: Terminal formatting and colors
+    - typer: CLI framework integration
+"""
+
 from pathlib import Path
 import inquirer  # type: ignore
 from inquirer.themes import GreenPassion  # type: ignore
@@ -116,7 +140,7 @@ def make_language_selection() -> SupportedLanguage:
         inquirer.List(
             "language",
             message="Hit [ENTER] to make your selection",
-            choices=[l for l in SupportedLanguage],
+            choices=list(SupportedLanguage),
         ),
     ]
 
