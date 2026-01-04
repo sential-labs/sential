@@ -42,6 +42,7 @@ from constants import SupportedLanguage
 from core.discovery import FileInventoryWriter
 from core.exceptions import EmptyInventoryError, TempFileError
 from core.extraction import generate_tags_jsonl
+from ui.progress_callback import RichProgressCallback
 from ui.prompts import make_language_selection, select_scope
 
 
@@ -105,7 +106,9 @@ def main(
 
     scopes = select_scope(path, language)
     try:
-        with FileInventoryWriter(path, scopes, language) as writer:
+        with FileInventoryWriter(
+            path, scopes, language, GitClient(path), RichProgressCallback()
+        ) as writer:
             pr("\n[bold magenta]🔍 Sifting through your codebase...")
             inventory_result = writer.process()
             tags_map = generate_tags_jsonl(

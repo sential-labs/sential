@@ -21,7 +21,7 @@ from core.exceptions import (
 )
 from core.models import InventoryResult, InventoryStats
 from models import SupportedLanguage
-from ui.progress_callback import RichProgressCallback
+from ui.progress_callback import ProgressCallback
 
 
 class FileCategory(Enum):
@@ -87,7 +87,14 @@ class FileInventoryWriter:
     temporary files after processing completes.
     """
 
-    def __init__(self, root_path: Path, scopes: list[str], language: SupportedLanguage):
+    def __init__(
+        self,
+        root_path: Path,
+        scopes: list[str],
+        language: SupportedLanguage,
+        git_client: GitClient,
+        progress_callback: ProgressCallback,
+    ):
         """
         Initialize the file inventory writer.
 
@@ -95,13 +102,14 @@ class FileInventoryWriter:
             root_path: Root directory of the Git repository to scan.
             scopes: List of relative paths to restrict scanning to specific directories.
             language: Target programming language for file classification.
+            git_client: Git client instance for file discovery operations.
+            progress_callback: Progress callback for reporting scan progress.
         """
         self.root_path = root_path
         self.scopes = scopes
         self.language = language
-        self.git_client = GitClient(self.root_path)
-        self.total_files = self.git_client.count_files(self.scopes)
-        self.file_stream = self.git_client.stream_file_paths(self.scopes)
+        self.git_client = git_client
+        self.progress_callback = progress_callback
         # Get the allowed extensions (e.g., {'.js', '.ts'})
         self.allowed_extensions = LANGUAGES_HEURISTICS[self.language]["extensions"]
 
@@ -110,9 +118,6 @@ class FileInventoryWriter:
             frozenset(UNIVERSAL_CONTEXT_FILES)
             | LANGUAGES_HEURISTICS[self.language]["manifests"]
         )
-        self.lang_file_count = 0
-        self.ctx_file_count = 0
-        self.processed_files_chunk = 0
 
         # File handles and paths - set in __enter__, closed in process(), cleaned up in __exit__
         self.lang_file: Optional[IO[str]] = None
@@ -139,13 +144,6 @@ class FileInventoryWriter:
                 "Did you forget to use 'with FileInventoryWriter(...) as writer'?"
             )
         return self.context_file
-
-    @property
-    def _advance(self) -> int:
-        """We use this to define the advance amount for progress bar"""
-        if self.total_files <= 100:
-            return 1
-        return 5 * (len(str(self.total_files)) - 1)
 
     def __enter__(self):
         """
@@ -174,6 +172,15 @@ class FileInventoryWriter:
 
         Files are already closed by process(), so this only removes the temp files
         from disk. Called automatically when exiting the 'with' block.
+
+        Args:
+            *args: Exception information if an exception occurred in the 'with' block.
+                If an exception occurred, args[0] is the exception type, args[1] is
+                the exception value, and args[2] is the traceback. If no exception
+                occurred, all are None.
+
+        Note:
+            This method always cleans up temp files, even if an exception occurred.
         """
         # Context manager only handles cleanup - files are already closed by process()
         if self.lang_file_path and self.lang_file_path.exists():
@@ -197,41 +204,28 @@ class FileInventoryWriter:
                 specified language and scopes.
             RuntimeError: If not used as a context manager (files not initialized).
         """
+        total_files = self.git_client.count_files(self.scopes)
+        file_stream = self.git_client.stream_file_paths(self.scopes)
+
         # Handle empty repository or empty scopes - raise exception to stop processing
-        if self.total_files == 0:
+        if total_files == 0:
             raise EmptyInventoryError(
                 "No files found in the repository matching the specified language and scopes"
             )
 
         try:
-            with RichProgressCallback() as callback:
-                callback.on_start(
-                    "Scanning files and applying language filter...",
-                    total=self.total_files,
-                )
-                for file_path in self.file_stream:
-
-                    # Check file category to know which file to write it to
-                    category = classify_file(
-                        file_path, self.allowed_extensions, self.allowed_context_files
-                    )
-                    self._write_to_file_by_category(file_path, category)
-
-                    self.processed_files_chunk += 1
-
-                    if self.processed_files_chunk % self._advance == 0:
-                        # Advance the raw counter
-                        total_count = self.lang_file_count + self.ctx_file_count
-                        callback.on_update(
-                            description=f"Kept {total_count} {self.language} files...",
-                            advance=self._advance,
-                        )
-
-                # Final update - progress bar completes when 'with' block exits
-                total_count = self.lang_file_count + self.ctx_file_count
-                callback.on_complete(
-                    f"✅ Found {total_count} valid files", self.total_files
-                )
+            inventory_stats = InventoryStats(0, 0)
+            process_file_stream(
+                file_stream,
+                self.allowed_extensions,
+                self.allowed_context_files,
+                self._lang_file,
+                self._context_file,
+                self.progress_callback,
+                total_files,
+                self.language,
+                inventory_stats,
+            )
         finally:
             # Close file handles explicitly - closing flushes automatically
             # Files remain on disk (delete=False) for generate_tags_jsonl() to read
@@ -256,36 +250,8 @@ class FileInventoryWriter:
             )
 
         return InventoryResult(
-            self.lang_file_path,
-            self.context_file_path,
-            InventoryStats(
-                self.lang_file_count,
-                self.ctx_file_count,
-            ),
+            self.lang_file_path, self.context_file_path, inventory_stats
         )
-
-    def _write_to_file_by_category(
-        self, file_path: Path, category: FileCategory
-    ) -> None:
-        """
-        Write file path to the appropriate inventory file based on category.
-
-        Args:
-            file_path: Relative path to the file to write.
-            category: Classification category determining which inventory file to use.
-        """
-        try:
-            match category:
-                case FileCategory.LANGUAGE:
-                    self.lang_file_count += 1
-                    self._lang_file.write(f"{file_path}\n")
-                case FileCategory.CONTEXT:
-                    self.ctx_file_count += 1
-                    self._context_file.write(f"{file_path}\n")
-                case _:
-                    pass
-        except IOError as e:
-            raise TempFileWriteError from e
 
 
 def classify_file(
@@ -325,3 +291,113 @@ def classify_file(
         return FileCategory.CONTEXT
 
     return FileCategory.IGNORE
+
+
+def write_to_file_by_category(
+    file_path: Path,
+    lang_file: IO[str],
+    context_file: IO[str],
+    category: FileCategory,
+    inventory_stats: InventoryStats,
+) -> None:
+    """
+    Write file path to the appropriate inventory file based on category.
+
+    Writes the file path to either the language file inventory or context file inventory
+    based on the classification category. Also updates the inventory statistics counters.
+
+    Args:
+        file_path: Relative path to the file to write.
+        lang_file: File handle for the language files inventory.
+        context_file: File handle for the context files inventory.
+        category: Classification category determining which inventory file to use.
+        inventory_stats: Statistics object to update with file counts.
+
+    Raises:
+        TempFileWriteError: If writing to the inventory file fails.
+    """
+    try:
+        match category:
+            case FileCategory.LANGUAGE:
+                lang_file.write(f"{file_path}\n")
+                inventory_stats.language_files += 1
+            case FileCategory.CONTEXT:
+                context_file.write(f"{file_path}\n")
+                inventory_stats.context_files += 1
+            case _:
+                pass
+    except IOError as e:
+        raise TempFileWriteError from e
+
+
+def process_file_stream(
+    file_stream: Generator[Path, None, None],
+    allowed_extensions: frozenset[str],
+    allowed_context_files: frozenset[str],
+    lang_file: IO[str],
+    context_file: IO[str],
+    progress_callback: ProgressCallback,
+    total_files: int,
+    language: SupportedLanguage,
+    inventory_stats: InventoryStats,
+) -> None:
+    """
+    Process a stream of file paths and generate inventory files.
+
+    Iterates through all files in the stream, classifies each file by category,
+    and writes file paths to the appropriate inventory files (language or context).
+    Reports progress through the provided callback and updates inventory statistics.
+
+    This is a pure function that performs the core file processing logic without
+    managing resources (temp files, progress UI). It can be tested independently
+    of the FileInventoryWriter class.
+
+    Args:
+        file_stream: Generator yielding file paths to process.
+        allowed_extensions: Set of file extensions that match the target language.
+        allowed_context_files: Set of file names that are considered context files.
+        lang_file: File handle for writing language file paths.
+        context_file: File handle for writing context file paths.
+        progress_callback: Callback for reporting processing progress.
+        total_files: Total number of files to process (for progress reporting).
+        language: Target programming language (for progress messages).
+        inventory_stats: Statistics object to update with file counts (mutated in-place).
+
+    Note:
+        The inventory_stats parameter is mutated in-place by this function.
+        Progress updates are sent at 10% intervals (e.g., every 10% of files processed).
+    """
+    processed_files = 0
+
+    # Always advance with a step of 10% of total
+    advance = int(total_files * 0.1)
+
+    with progress_callback as callback:
+        callback.on_start(
+            "Scanning files and applying language filter...",
+            total=total_files,
+        )
+        for file_path in file_stream:
+
+            # Check file category to know which file to write it to
+            category = classify_file(
+                file_path, allowed_extensions, allowed_context_files
+            )
+
+            write_to_file_by_category(
+                file_path, lang_file, context_file, category, inventory_stats
+            )
+
+            processed_files += 1
+
+            if processed_files % advance == 0:
+                # Advance the raw counter
+                callback.on_update(
+                    description=f"Kept {inventory_stats.total} {language} files...",
+                    advance=advance,
+                )
+
+        # Final update - progress bar completes when 'with' block exits
+        callback.on_complete(
+            f"✅ Found {inventory_stats.total} valid files", total_files
+        )

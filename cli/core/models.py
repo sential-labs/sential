@@ -10,20 +10,17 @@ from enum import StrEnum
 from pathlib import Path
 
 
-@dataclass(frozen=True)
+@dataclass()
 class InventoryStats:
     """
     Statistics regarding a file inventory scan operation.
 
-    This immutable dataclass stores counts of files that were classified
+    This dataclass stores counts of files that were classified
     during the discovery phase. It provides a computed total property for convenience.
 
     Attributes:
         language_files: The number of source code files found (e.g., .py, .ts files).
         context_files: The number of context files found (e.g., README.md, package.json).
-
-    Note:
-        This is a frozen dataclass, so instances are immutable after creation.
     """
 
     language_files: int

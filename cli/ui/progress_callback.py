@@ -26,10 +26,20 @@ class ProgressCallback(Protocol):
     or no-op behavior for testing.
 
     The lifecycle is:
-    1. on_start() - Called once at the beginning
-    2. on_update() - Called multiple times during processing
-    3. on_complete() - Called once at the end
+    1. Context manager entry (__enter__)
+    2. on_start() - Called once at the beginning
+    3. on_update() - Called multiple times during processing
+    4. on_complete() - Called once at the end
+    5. Context manager exit (__exit__)
     """
+
+    def __enter__(self) -> "ProgressCallback":
+        """Enter the progress callback context."""
+        ...
+
+    def __exit__(self, *args) -> None:
+        """Exit the progress callback context."""
+        ...
 
     def on_start(self, description: str, total: int) -> None:
         """
@@ -71,7 +81,7 @@ class ProgressCallback(Protocol):
         ...
 
 
-class RichProgressCallback(ProgressCallback):
+class RichProgressCallback:
     """
     Rich UI implementation of ProgressCallback.
 
@@ -185,7 +195,15 @@ class NoOpProgressCallback:
     Rich UI dependencies or actual progress bars.
     """
 
-    def on_start(self, total: int, description: str) -> None:
+    def __enter__(self) -> "NoOpProgressCallback":
+        """Enter the progress callback context (no-op)."""
+        return self
+
+    def __exit__(self, *args) -> None:
+        """Exit the progress callback context (no-op)."""
+        pass
+
+    def on_start(self, description: str, total: int) -> None:
         """No-op: does nothing."""
         pass
 
@@ -195,6 +213,6 @@ class NoOpProgressCallback:
         """No-op: does nothing."""
         pass
 
-    def on_complete(self, description: str) -> None:
+    def on_complete(self, description: str, completed: int) -> None:
         """No-op: does nothing."""
         pass
