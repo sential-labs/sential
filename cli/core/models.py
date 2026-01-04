@@ -67,6 +67,13 @@ class InventoryResult:
     stats: InventoryStats
 
 
+@dataclass(frozen=True)
+class Ctag:
+    path: str
+    kind: str
+    name: str
+
+
 class RecordType(StrEnum):
     """Descriptive names for JSONL record types"""
 
