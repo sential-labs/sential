@@ -82,7 +82,8 @@ def generate_tags_jsonl(
 
     finally:
         # Clean up output file only if generation failed
-        # Temp inventory files (source_path, context_path) are cleaned up by FileInventoryWriter context manager
+        # Temp inventory files (source_path, context_path) are cleaned up by
+        # FileInventoryWriter context manager
         if not success:
             output_path.unlink(missing_ok=True)
 
@@ -104,9 +105,12 @@ def extract_symbols(
 
     Args:
         base_path (Path): The working directory for the ctags subprocess.
-        inventory_path (Path): Path to the temporary file containing the list of source files to scan.
-        out_f (io.TextIOWrapper): An open file handle (write mode) where the JSONL records will be written.
-        lang_file_count (int): The total number of files to process, used for the progress bar.
+        inventory_path (Path): Path to the temporary file containing the list of
+            source files to scan.
+        out_f (io.TextIOWrapper): An open file handle (write mode) where the
+            JSONL records will be written.
+        lang_file_count (int): The total number of files to process, used for
+            the progress bar.
     """
 
     pr("\n[bold magenta]🏷️  Extracting code symbols...[/bold magenta]")

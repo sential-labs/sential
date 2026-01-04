@@ -121,6 +121,24 @@ def main(
 
 
 def normalize_language(language: Optional[str]) -> SupportedLanguage:
+    """
+    Normalizes and validates a language string to a SupportedLanguage enum value.
+
+    If no language is provided or the string is empty, prompts the user interactively
+    to select a language. Otherwise, performs case-insensitive matching against
+    the supported languages and returns the matching enum value.
+
+    Args:
+        language (Optional[str]): The language string to normalize. Can be None,
+            empty, or a string representation of a supported language.
+
+    Returns:
+        SupportedLanguage: The matching SupportedLanguage enum value.
+
+    Raises:
+        ValueError: If the provided language string doesn't match any supported
+            language (case-insensitive).
+    """
     # Validate language selection
     if not language or not language.strip():
         # If language not passed as arg, show options
@@ -137,6 +155,21 @@ def normalize_language(language: Optional[str]) -> SupportedLanguage:
 def print_empty_inventory_err(
     e: EmptyInventoryError, language: SupportedLanguage
 ) -> None:
+    """
+    Displays a user-friendly error message when no files are found.
+
+    Prints formatted error messages to inform the user that no files matching
+    the specified language were found in the selected scopes, along with
+    helpful tips for resolving the issue.
+
+    Args:
+        e (EmptyInventoryError): The exception that was raised, containing
+            error details.
+        language (SupportedLanguage): The target language that was being scanned.
+
+    Raises:
+        typer.Exit: Always raises with exit code 1 to terminate the application.
+    """
     pr("[yellow]⚠️  No files found[/yellow]")
     pr(
         f"No files matching [green]{language}[/green] were found in the selected scopes."
@@ -148,6 +181,20 @@ def print_empty_inventory_err(
 
 
 def print_temp_file_err(e: TempFileError) -> None:
+    """
+    Displays a user-friendly error message for temporary file operation failures.
+
+    Prints formatted error messages to inform the user about workspace/temporary
+    file issues, including diagnostic information for troubleshooting. This helps
+    users understand and resolve filesystem permission or disk space problems.
+
+    Args:
+        e (TempFileError): The exception that was raised, containing error details
+            and diagnostic information.
+
+    Raises:
+        typer.Exit: Always raises with exit code 1 to terminate the application.
+    """
     pr("❌ [bold red]Workspace Error[/bold red]")
     pr("The app couldn't create the temporary files needed to run.")
     pr(

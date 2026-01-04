@@ -69,12 +69,35 @@ class InventoryResult:
 
 @dataclass(frozen=True)
 class Ctag:
+    """
+    Represents a code symbol (tag) extracted by Universal Ctags.
+
+    This immutable dataclass stores information about a single code symbol found
+    in a source file. It contains the file path where the symbol was found, the
+    type/kind of symbol (e.g., "function", "class", "variable"), and the symbol's name.
+
+    Attributes:
+        path: The relative file path where this symbol was found.
+        kind: The type of symbol (e.g., "function", "class", "variable", "method").
+        name: The name of the symbol (e.g., function name, class name).
+    """
+
     path: str
     kind: str
     name: str
 
 
 class RecordType(StrEnum):
-    """Descriptive names for JSONL record types"""
+    """
+    Enumeration of record types in the JSONL output format.
+
+    This enum defines the different types of records that can appear in the
+    generated JSONL payload file. Each record type represents a different
+    category of content extracted from the repository.
+
+    Attributes:
+        CONTEXT_FILE: Represents a context file record containing full file content
+            (e.g., README.md, package.json, configuration files).
+    """
 
     CONTEXT_FILE = "context_file"

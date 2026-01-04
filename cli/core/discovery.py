@@ -222,20 +222,22 @@ class FileInventoryWriter:
                     if self.processed_files_chunk == self._advance:
                         # Advance the raw counter
                         update_progress(progress, task, advance=self._advance)
+                        total_count = self.lang_file_count + self.ctx_file_count
                         update_progress(
                             progress,
                             task,
                             ProgressState.IN_PROGRESS,
-                            description=f"Kept {self.lang_file_count + self.ctx_file_count} {self.language} files...",
+                            description=f"Kept {total_count} {self.language} files...",
                         )
                         self.processed_files_chunk = 0
 
                 # Final update - progress bar completes when 'with' block exits
+                total_count = self.lang_file_count + self.ctx_file_count
                 update_progress(
                     progress,
                     task,
                     ProgressState.COMPLETE,
-                    description=f"✅ Found {self.lang_file_count + self.ctx_file_count} valid files",
+                    description=f"✅ Found {total_count} valid files",
                     completed=self.total_files,
                 )
         finally:
