@@ -14,7 +14,7 @@ from pathlib import Path
 from constants import LANGUAGES_HEURISTICS, UNIVERSAL_CONTEXT_FILES
 from core.models import RecordType
 from models import SupportedLanguage
-from ui.progress import ProgressState, create_progress, create_task, update_progress
+from ui.progress_callback import RichProgressCallback
 from utils import read_file_content
 
 
@@ -146,9 +146,8 @@ def process_context_files(
     # A. Load valid context files found by Git into a set
     context_files: set[Path] = load_context_files(context_path)
 
-    with create_progress() as progress:
-        task = create_task(
-            progress,
+    with RichProgressCallback() as callback:
+        callback.on_start(
             f"Reading from {ctx_file_count} context files...",
             total=ctx_file_count,
         )
@@ -167,10 +166,7 @@ def process_context_files(
                     content = read_file_content(full_path, True)
                     if content:
                         write_context_record(out_f, match, content)
-                        update_progress(
-                            progress,
-                            task,
-                            ProgressState.IN_PROGRESS,
+                        callback.on_update(
                             description=f"Included {match}...",
                             advance=1,
                         )
@@ -186,17 +182,11 @@ def process_context_files(
 
             if content:
                 write_context_record(out_f, leftover, content)
-                update_progress(
-                    progress,
-                    task,
-                    ProgressState.IN_PROGRESS,
+                callback.on_update(
                     description=f"Included {leftover}...",
                     advance=1,
                 )
-        update_progress(
-            progress,
-            task,
-            ProgressState.COMPLETE,
+        callback.on_complete(
             description=f"✅ Processed {ctx_file_count} context files",
             completed=ctx_file_count,
         )

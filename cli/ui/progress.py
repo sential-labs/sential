@@ -123,6 +123,15 @@ def update_progress(
     if description:
         description = f"[{progress_state}]{description}"
 
-    progress.update(
-        task, total=total, completed=completed, advance=advance, description=description
-    )
+    # Only pass description if it's not None to preserve existing description
+    # Rich's progress.update() treats None as "clear", so we omit it entirely
+    if description is not None:
+        progress.update(
+            task,
+            total=total,
+            completed=completed,
+            advance=advance,
+            description=description,
+        )
+    else:
+        progress.update(task, total=total, completed=completed, advance=advance)

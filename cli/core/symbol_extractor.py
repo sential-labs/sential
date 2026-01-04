@@ -13,7 +13,7 @@ from typing import Optional
 from adapters.ctags import get_ctags_path
 from constants import CTAGS_KINDS
 from core.models import Ctag
-from ui.progress import ProgressState, create_progress, create_task, update_progress
+from ui.progress_callback import RichProgressCallback
 
 
 def process_ctags_output(
@@ -41,10 +41,9 @@ def process_ctags_output(
     # We accumulate the tags for the current file path only
     tag_count = 0
 
-    with create_progress() as progress:
+    with RichProgressCallback() as callback:
 
-        task = create_task(
-            progress,
+        callback.on_start(
             f"Parsing symbols from {lang_file_count} files...",
             total=lang_file_count,
         )
@@ -63,7 +62,7 @@ def process_ctags_output(
                 if path != current_file_path:
                     if current_file_path:
                         write_symbol_record(out_f, current_file_path, current_tags)
-                        update_progress(progress, task, advance=1)
+                        callback.on_update(advance=1)
                     # Reset for new file
                     current_file_path = path
                     current_tags = []
@@ -74,10 +73,7 @@ def process_ctags_output(
 
                 # Tick the spinner occasionally
                 if tag_count % 10 == 0:
-                    update_progress(
-                        progress,
-                        task,
-                        ProgressState.IN_PROGRESS,
+                    callback.on_update(
                         description=f"Extracted {tag_count} symbols...",
                     )
 
@@ -85,10 +81,7 @@ def process_ctags_output(
             if current_file_path:
                 write_symbol_record(out_f, current_file_path, current_tags)
 
-        update_progress(
-            progress,
-            task,
-            ProgressState.COMPLETE,
+        callback.on_complete(
             description=f"✅ Extracted {tag_count} symbols",
             completed=lang_file_count,
         )

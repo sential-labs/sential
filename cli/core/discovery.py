@@ -11,6 +11,7 @@ from enum import Enum
 import tempfile
 from pathlib import Path
 from typing import IO, Generator, Optional
+
 from adapters.git import GitClient
 from constants import LANGUAGES_HEURISTICS, UNIVERSAL_CONTEXT_FILES
 from core.exceptions import (
@@ -20,7 +21,7 @@ from core.exceptions import (
 )
 from core.models import InventoryResult, InventoryStats
 from models import SupportedLanguage
-from ui.progress import ProgressState, create_progress, create_task, update_progress
+from ui.progress_callback import RichProgressCallback
 
 
 class FileCategory(Enum):
@@ -203,9 +204,8 @@ class FileInventoryWriter:
             )
 
         try:
-            with create_progress() as progress:
-                task = create_task(
-                    progress,
+            with RichProgressCallback() as callback:
+                callback.on_start(
                     "Scanning files and applying language filter...",
                     total=self.total_files,
                 )
@@ -219,26 +219,18 @@ class FileInventoryWriter:
 
                     self.processed_files_chunk += 1
 
-                    if self.processed_files_chunk == self._advance:
+                    if self.processed_files_chunk % self._advance == 0:
                         # Advance the raw counter
-                        update_progress(progress, task, advance=self._advance)
                         total_count = self.lang_file_count + self.ctx_file_count
-                        update_progress(
-                            progress,
-                            task,
-                            ProgressState.IN_PROGRESS,
+                        callback.on_update(
                             description=f"Kept {total_count} {self.language} files...",
+                            advance=self._advance,
                         )
-                        self.processed_files_chunk = 0
 
                 # Final update - progress bar completes when 'with' block exits
                 total_count = self.lang_file_count + self.ctx_file_count
-                update_progress(
-                    progress,
-                    task,
-                    ProgressState.COMPLETE,
-                    description=f"✅ Found {total_count} valid files",
-                    completed=self.total_files,
+                callback.on_complete(
+                    f"✅ Found {total_count} valid files", self.total_files
                 )
         finally:
             # Close file handles explicitly - closing flushes automatically
