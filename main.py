@@ -40,11 +40,9 @@ import typer
 from rich import print as pr
 from adapters.git import GitClient
 from constants import SupportedLanguage
-from core.discovery import FileInventoryWriter
 from core.exceptions import EmptyInventoryError, TempFileError
-from core.extraction import generate_tags_jsonl
-from ui.progress_callback import RichProgressCallback
-from ui.prompts import make_language_selection, select_scope
+from core.refactor import categorize_files, process_files, write_processed_files
+from ui.prompts import make_language_selection
 
 
 app = typer.Typer()
@@ -97,29 +95,36 @@ def main(
     try:
         language = normalize_language(language)
     except ValueError:
-        pr(f"\n[red bold]Not a valid language: {language}")
+        if language is not None:
+            pr(f"\n[red bold]Not a valid language: {language}")
         language = make_language_selection()
 
     pr(f"\n[green]Language selected: {language}...[/green]\n")
     pr(f"[green]Scanning: {path}...[/green]\n")
 
-    scopes = select_scope(path, language)
-    try:
-        with FileInventoryWriter(
-            path, scopes, language, GitClient(path), RichProgressCallback()
-        ) as writer:
-            pr("\n[bold magenta]🔍 Sifting through your codebase...")
-            inventory_result = writer.process()
-            tags_map = generate_tags_jsonl(
-                path,
-                inventory_result,
-                language,
-            )
-            print(tags_map)
-    except EmptyInventoryError as e:
-        print_empty_inventory_err(e, language)
-    except TempFileError as e:
-        print_temp_file_err(e)
+    raw_stream = git_client.stream_file_paths()
+    categorized_files = categorize_files(raw_stream, language)
+    processed_files = process_files(path, categorized_files)
+    p = write_processed_files(processed_files)
+    print(p)
+
+    # scopes = select_scope(path, language)
+    # try:
+    #     with FileInventoryWriter(
+    #         path, scopes, language, GitClient(path), RichProgressCallback()
+    #     ) as writer:
+    #         pr("\n[bold magenta]🔍 Sifting through your codebase...")
+    #         inventory_result = writer.process()
+    #         tags_map = generate_tags_jsonl(
+    #             path,
+    #             inventory_result,
+    #             language,
+    #         )
+    #         print(tags_map)
+    # except EmptyInventoryError as e:
+    #     print_empty_inventory_err(e, language)
+    # except TempFileError as e:
+    #     print_temp_file_err(e)
 
 
 def normalize_language(language: Optional[str]) -> SupportedLanguage:

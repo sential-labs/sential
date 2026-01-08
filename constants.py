@@ -28,6 +28,32 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "extensions": frozenset({".py", ".pyi"}),
+        "signals": frozenset(
+            {
+                "__init__",
+                "__main__",
+                "main",
+                "app",
+                "wsgi",
+                "asgi",
+                "manage",
+                "run",
+                "application",
+                "server",
+            },
+        ),
+        "ignore_dirs": frozenset(
+            {
+                "tests",
+                "test",
+                "mocks",
+                "examples",
+                "benchmarks",
+                "scripts",
+                "htmlcov",
+                "docs",
+            }
+        ),
     },
     SupportedLanguage.JS: {
         "manifests": frozenset(
@@ -42,7 +68,31 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "extensions": frozenset(
-            {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"}
+            {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".velte", ".astro"}
+        ),
+        "signals": frozenset(
+            {
+                "index",
+                "main",
+                "app",
+                "server",
+                "entry",
+                "bootstrap",
+                "start",
+            }
+        ),
+        "ignore_dirs": frozenset(
+            {
+                "tests",
+                "__tests__",
+                "mocks",
+                "stories",
+                "examples",
+                "e2e",
+                "cypress",
+                "docs",
+                "spec",
+            }
         ),
     },
     SupportedLanguage.JAVA: {
@@ -57,6 +107,16 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "extensions": frozenset({".java", ".kt", ".scala", ".groovy"}),
+        "signals": frozenset(
+            {
+                "main",
+                "application",
+                "app",
+            }
+        ),
+        "ignore_dirs": frozenset(
+            {"test", "tests", "mocks", "examples", "samples", "docs", "it"}
+        ),
     },
     SupportedLanguage.CS: {
         "manifests": frozenset(
@@ -70,6 +130,18 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "extensions": frozenset({".cs", ".fs", ".vb", ".cshtml", ".razor"}),
+        "signals": frozenset(
+            {
+                "program",
+                "startup",
+                "app",
+                "main",
+                "module1",
+            }
+        ),
+        "ignore_dirs": frozenset(
+            {"tests", "test", "mocks", "examples", "spec", "samples", "TestResults"}
+        ),
     },
     SupportedLanguage.GO: {
         "manifests": frozenset(
@@ -81,6 +153,18 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "extensions": frozenset({".go"}),
+        "signals": frozenset(
+            {
+                "main",
+                "server",
+                "app",
+                "cmd",
+                "doc",
+            }
+        ),
+        "ignore_dirs": frozenset(
+            {"tests", "test", "examples", "vendor", "testdata", "mocks", "bench"}
+        ),
     },
     SupportedLanguage.CPP: {
         "manifests": frozenset(
@@ -106,6 +190,25 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
                 ".hxx",
                 ".m",
                 ".mm",
+            }
+        ),
+        "signals": frozenset(
+            {
+                "main",
+                "app",
+                "application",
+            }
+        ),
+        "ignore_dirs": frozenset(
+            {
+                "tests",
+                "test",
+                "mocks",
+                "examples",
+                "samples",
+                "third_party",
+                "vendor",
+                "external",
             }
         ),
     },

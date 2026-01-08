@@ -41,8 +41,10 @@ class LanguagesHeuristics(TypedDict):
             source code files for the target language.
         signals: A frozen set of signal file names (e.g., "__init__.py", "index.js") that
             strongly indicate a module root, even without explicit manifests.
+        ignore_dirs: A frozen set of directories which we should ignore (e.g., "tests", "mocks")
     """
 
     manifests: frozenset[str]
     extensions: frozenset[str]
     signals: frozenset[str]
+    ignore_dirs: frozenset[str]

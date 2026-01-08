@@ -7,10 +7,12 @@ files (source code) and context files (documentation, configs). It generates
 temporary inventory files that are used by downstream processing stages.
 """
 
+from collections import defaultdict
+from dataclasses import dataclass
 from enum import Enum
 import tempfile
 from pathlib import Path
-from typing import IO, Generator, Optional
+from typing import IO, DefaultDict, Generator, Optional
 
 from adapters.git import GitClient
 from constants import LANGUAGES_HEURISTICS, UNIVERSAL_CONTEXT_FILES
@@ -42,37 +44,51 @@ class FileCategory(Enum):
     IGNORE = "ignore"
 
 
-def get_focused_inventory(
-    base_path: Path, language: SupportedLanguage
-) -> Generator[Path, None, None]:
+@dataclass
+class DirStats:
+    """Statistics for a directory during module discovery."""
+
+    count: int = 0
+    has_manifest: bool = False
+    has_signal: bool = False
+
+
+def discover_modules(root_path: Path, language: SupportedLanguage) -> list[Path]:
     """
-    Scans the repository to identify potential module roots based on language-specific heuristics.
-
-    This generator consumes the raw Git file stream and applies a "Language Sieve."
-    It looks for specific manifest files (e.g., `package.json` for TypeScript, `Cargo.toml`
-    for Rust) defined in `LANGUAGES_HEURISTICS` to identify directories that represent
-    distinct modules or sub-projects within the repository.
-
-    Args:
-        base_path (Path): The absolute root path of the repository.
-        language (SupportedLanguages): The enum representing the selected programming language,
-            used to determine which manifest files to look for.
-
-    Yields:
-        Path: The relative path to the parent directory of a found manifest file,
-        effectively identifying a module root (e.g., "src/backend" or ".").
+    Identifies 'Modules' by aggregating file stats across the entire repo.
+    Returns a list of module paths sorted by depth then name.
     """
 
-    git_client = GitClient(base_path)
+    heuristics = LANGUAGES_HEURISTICS[language]
+    manifests = heuristics["manifests"]
+    signals = heuristics["signals"]
+    extensions = heuristics["extensions"]
+
+    git_client = GitClient(root_path)
     raw_stream = git_client.stream_file_paths()
 
-    manifests = LANGUAGES_HEURISTICS[language]["manifests"]
+    current_dir = None
+    file_count = 0
+    has_manifest = False
+    has_signal = False
+
+    dir_stats: DefaultDict[Path, DirStats] = defaultdict(DirStats)
 
     for file_path in raw_stream:
-        rel_path = file_path.parent
+        dir = file_path.parent
+        file_name = file_path.name.lower()
+        file_ext = file_path.suffix.lower()
 
-        if file_path.name.lower() in manifests:
-            yield rel_path
+        if file_name in manifests:
+            dir_stats[dir].has_manifest = True
+        elif any(file_ext == ext for ext in extensions):
+            dir_stats[dir].count += 1
+
+    if current_dir:
+        if has_manifest or has_signal or file_count > 3:
+            pass
+
+    return [Path(".")]
 
 
 class FileInventoryWriter:

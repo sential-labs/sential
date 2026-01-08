@@ -32,6 +32,7 @@ class GitClient:
             root: The root directory path of the Git repository.
         """
         self.root = root
+        self.cmd = ["git", "ls-files", "--cached", "--others", "--exclude-standard"]
 
     def is_repo(self) -> bool:
         """
@@ -55,7 +56,7 @@ class GitClient:
         except subprocess.CalledProcessError:
             return False
 
-    def count_files(self, scopes: list[str]) -> int:
+    def count_files(self) -> int:
         """
         Efficiently counts the number of lines (files) in a Git command output.
 
@@ -72,11 +73,10 @@ class GitClient:
 
         # Construct the command: git ls-files ... -- path1 path2
         # The "--" separator tells git "everything after this is a path"
-        cmd = self._build_ls_files_cmd(scopes)
 
         count = 0
         # Use Popen to open a pipe, not a buffer
-        with self._create_subprocess(cmd) as process:
+        with self._create_subprocess(self.cmd) as process:
 
             # Iterate over the stream directly
             if process.stdout:
@@ -85,9 +85,7 @@ class GitClient:
 
         return count
 
-    def stream_file_paths(
-        self, scopes: Optional[list[str]] = None
-    ) -> Generator[Path, None, None]:
+    def stream_file_paths(self) -> Generator[Path, None, None]:
         """
         Lazily yield all relevant file paths from the Git index and working tree
         in ascending alphabetical order.
@@ -106,21 +104,13 @@ class GitClient:
             Path: A relative path object (relative to repository root) for each file
                 found in the repository.
         """
-        cmd = self._build_ls_files_cmd(scopes)
 
-        with self._create_subprocess(cmd) as process:
+        with self._create_subprocess(self.cmd) as process:
             if process.stdout:
                 for p in process.stdout:
                     yield Path(p.strip())
 
             process.wait()
-
-    def _build_ls_files_cmd(self, scopes: Optional[list[str]]) -> list[str]:
-        cmd = ["git", "ls-files", "--cached", "--others", "--exclude-standard"]
-        if scopes:
-            cmd += ["--"] + scopes
-
-        return cmd
 
     def _create_subprocess(self, cmd: list[str]) -> subprocess.Popen[str]:
         return subprocess.Popen(

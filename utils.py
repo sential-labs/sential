@@ -69,26 +69,20 @@ def is_binary_file(file_path: Path) -> bool:
         return True
 
 
-def read_file_content(file_path: Path, is_tier_1: bool = False) -> str:
+def read_file(file_path: Path) -> str:
     """
-    Reads the text content of a file with safety checks and intelligent truncation.
+    Read the text content of a file as UTF-8.
 
-    Binary files are automatically detected and skipped. Text files are read up to a specific
-    character limit based on their importance "Tier".
-    - **Tier 1 (True):** Critical context files (Manifests, Docs). Limit: 100k chars.
-    - **Tier 2 (False):** Standard files. Limit: 50k chars.
+    Binary files and non-existent files are skipped. Invalid UTF-8 characters are
+    silently ignored (errors="ignore"). Other I/O errors return an empty string.
 
     Args:
-        file_path (Path): The absolute path to the file to read.
-        is_tier_1 (bool): If True, applies a higher character limit (100k). If False,
-            applies the standard limit (50k). Defaults to False.
+        file_path: The path to the file to read.
 
     Returns:
-        str: The content of the file. If the file is binary, non-existent, or an error occurs,
-        returns an empty string. If the content exceeds the limit, it is truncated with a notice.
+        The file content as a string, or an empty string if the file doesn't exist,
+        is binary, or an I/O error occurs.
     """
-
-    limit = 100_000 if is_tier_1 else 50_000
 
     if not file_path.is_file():
         return ""
@@ -99,14 +93,7 @@ def read_file_content(file_path: Path, is_tier_1: bool = False) -> str:
 
     try:
         with file_path.open("r", encoding="utf-8", errors="ignore") as f:
-            # We read limit + 1 so we KNOW if there was more left behind
-            content = f.read(limit + 1)
-
-            if len(content) > limit:
-                return (
-                    content[:limit]
-                    + f"\n\n... [TRUNCATED BY SENTIAL: File exceeded {limit} chars] ..."
-                )
+            content = f.read()
 
             return content
     except OSError:

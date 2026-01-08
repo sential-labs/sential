@@ -30,7 +30,7 @@ import typer
 
 # Note: You will need to import get_focused_inventory from core.discovery here
 from constants import SupportedLanguage
-from core.discovery import get_focused_inventory
+from core.discovery import discover_modules
 
 
 def select_scope(path: Path, language: SupportedLanguage) -> list[str]:
@@ -56,7 +56,7 @@ def select_scope(path: Path, language: SupportedLanguage) -> list[str]:
     """
 
     candidates = sorted(
-        list(p for p in get_focused_inventory(path, SupportedLanguage(language)))
+        list(p for p in discover_modules(path, SupportedLanguage(language)))
     )
 
     if not candidates:
