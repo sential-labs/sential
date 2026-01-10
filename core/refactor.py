@@ -31,20 +31,13 @@ class FileCategory(Enum):
     UNKNOWN = "generic_file"
 
 
-class CategoryProcessedFilesStatus:
-    def __init__(self, category: FileCategory, all_category_files_len: int) -> None:
+class CategoryProcessedFiles:
+    def __init__(self, category: FileCategory) -> None:
         self.category: FileCategory = category
-        self.all_category_files_len: int = all_category_files_len
         self.files: list[ProcessedFile] = []
-        self.current_index: int = 0
-        self.is_completed: bool = False
 
     def append(self, file: ProcessedFile) -> None:
-        if self.current_index < self.all_category_files_len:
-            self.files.append(file)
-            self.current_index += 1
-        else:
-            self.is_completed = True
+        self.files.append(file)
 
 
 class TokenCounter:
@@ -126,18 +119,21 @@ class TokenBudget:
 
     def __init__(self, limits: TokenLimits):
         self.limits = limits
+        self.pool = 0
         # Derived budgets
-        self.remaining: dict[FileCategory, int] = {
+        self.initial_allocations: dict[FileCategory, int] = {
             cat: int(self.limits.max_total * ratio)
             for cat, ratio in limits.ratios.items()
         }
 
-    def can_afford(self, category: FileCategory, count: int) -> bool:
-        return self.remaining.get(category, 0) >= count
+    def start_category(self, category: FileCategory) -> None:
+        self.pool += self.initial_allocations.get(category, 0)
 
-    def spend(self, category: FileCategory, count: int) -> None:
-        if category in self.remaining:
-            self.remaining[category] -= count
+    def can_afford(self, count: int) -> bool:
+        return self.pool >= count
+
+    def spend(self, count: int) -> None:
+        self.pool -= count
 
 
 def categorize_files(
@@ -158,7 +154,7 @@ def categorize_files(
 def process_files(
     root: Path,
     files_by_category: dict[FileCategory, list[FileMetadata]],
-) -> dict[FileCategory, CategoryProcessedFilesStatus]:
+) -> dict[FileCategory, CategoryProcessedFiles]:
 
     counter = TokenCounter("gpt-4o")
     token_budget = TokenBudget(TokenLimits())
@@ -170,7 +166,7 @@ def process_files(
         FileCategory.SOURCE,
     ]
 
-    status_results: dict[FileCategory, CategoryProcessedFilesStatus] = {}
+    status_results: dict[FileCategory, CategoryProcessedFiles] = {}
 
     for category in processing_order:
         files_in_category = files_by_category[category]
@@ -181,7 +177,7 @@ def process_files(
             key=lambda file_meta: (file_meta.score, -file_meta.depth), reverse=True
         )
 
-        status = CategoryProcessedFilesStatus(category, len(files_in_category))
+        status = CategoryProcessedFiles(category)
 
         if category == FileCategory.SOURCE:
             extract_ctags_for_source_files(
@@ -192,7 +188,7 @@ def process_files(
                 status,
             )
         else:
-            process_files_for_category(
+            process_readable_files_for_category(
                 root,
                 files_in_category,
                 counter,
@@ -206,7 +202,7 @@ def process_files(
 
 
 def write_processed_files(
-    results: dict[FileCategory, CategoryProcessedFilesStatus],
+    results: dict[FileCategory, CategoryProcessedFiles],
 ) -> Path:
     """
     Writes a symbol record to the output file in JSONL format.
@@ -229,17 +225,17 @@ def write_processed_files(
     return output_path
 
 
-def process_files_for_category(
+def process_readable_files_for_category(
     root: Path,
     files: list[FileMetadata],
     counter: TokenCounter,
     token_budget: TokenBudget,
-    status: CategoryProcessedFilesStatus,
+    status: CategoryProcessedFiles,
 ) -> None:
 
     category = status.category
-
-    for file_meta in islice(files, status.current_index, None):
+    token_budget.start_category(category)
+    for file_meta in islice(files, None):
         full_path = root / file_meta.file_path
         if not full_path.exists():
             continue
@@ -247,13 +243,12 @@ def process_files_for_category(
         content = read_file(full_path)
 
         token_usage = counter.count(content)
-        if token_budget.can_afford(category, token_usage):
-            token_budget.spend(category, token_usage)
+        if token_budget.can_afford(token_usage):
+            token_budget.spend(token_usage)
             status.append(
                 ProcessedFile(str(file_meta.file_path), category.value, content)
             )
         else:
-            status.is_completed = True
             break
 
 
@@ -366,40 +361,51 @@ def extract_ctags_for_source_files(
     files: list[FileMetadata],
     counter: TokenCounter,
     token_budget: TokenBudget,
-    status: CategoryProcessedFilesStatus,
+    status: CategoryProcessedFiles,
 ) -> None:
-    """
-    Extracts code symbols from source files using Universal Ctags and processes them.
 
-    This function runs ctags on multiple source files, parses the JSON output, and formats
-    all valid symbols into strings. The output is used for token counting and budget management.
+    start = 0
+    token_budget.start_category(status.category)
+    while True:
+        processed_files, start = _run_ctags(root, files, start)
 
-    Args:
-        files: List of FileMetadata objects for source files to process.
-        counter: TokenCounter instance for counting tokens.
-        token_budget: TokenBudget instance for managing token limits.
-        status: CategoryProcessedFilesStatus to track processing state.
-    """
+        if not processed_files or start >= len(files):
+            break
 
-    with contextlib.closing(_stream_ctags_output(root, files, status)) as tag_stream:
-        for file_path, skeleton_content in tag_stream:
-            token_usage = counter.count(skeleton_content)
+        for file in processed_files:
+            token_usage = counter.count(file.content)
 
-            if token_budget.can_afford(status.category, token_usage):
-                token_budget.spend(status.category, token_usage)
-                status.append(
-                    ProcessedFile(file_path, status.category.value, skeleton_content)
-                )
+            if token_budget.can_afford(token_usage):
+                token_budget.spend(token_usage)
+                status.append(file)
             else:
-                status.is_completed = True
-                break
+                return
+
+    # Pass files and start_index/status.current_index to a function
+    # it should run ctags on up to 100 files from the files list
+    # returns a list of ProcessedFiles
+    # We iterate over that list counting tokens and start appending to status.files
+    # if we reach tokens we stop, if not, we start the function again until token limit
 
 
-def _stream_ctags_output(
-    root: Path, files: list[FileMetadata], status: CategoryProcessedFilesStatus
-) -> Generator[tuple[str, str], None, None]:
+def _run_ctags(
+    root: Path,
+    files: list[FileMetadata],
+    start: int = 0,
+    category: FileCategory = FileCategory.SOURCE,
+) -> tuple[Optional[list[ProcessedFile]], int]:
+
+    if category != FileCategory.SOURCE:
+        raise ValueError("Ctags must only be run on source files")
+
+    limit = 100
+    stop = start + limit
+    processed_files: list[ProcessedFile] = []
+    current_index = start
+
+    file_paths = [str(root / p.file_path) for p in islice(files, start, stop)]
+
     ctags_path = get_ctags_path()
-    terminator = "###END_FILE###"
 
     # Flags:
     # --output-format=json: easier parsing
@@ -410,20 +416,17 @@ def _stream_ctags_output(
         "--output-format=json",
         "--sort=no",
         "--fields=+n",
-        "--filter",
-        f"--filter-terminator={terminator}",
+        "-f",
+        "-",
     ]
+    # Append all paths as arguments
+    # subprocess handles escaping/quoting automatically
+    cmd.extend(file_paths)
 
     try:
         with subprocess.Popen(
             cmd,
-            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            # If we don't pass this and 5000 files emit warnings
-            # The OS pipe buffer will fill up, and since we're not
-            # reading them except when we crash, ctags will wait
-            # for the buffer to clear, the script waits for ctags
-            # to finish the current file -> Deadlock
             stderr=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",
@@ -431,46 +434,52 @@ def _stream_ctags_output(
             bufsize=1,
         ) as process:
 
-            if not (process.stdin and process.stdout):
-                return
+            current_file_path = None
+            current_file_tags: list[str] = []
 
-            for file_meta in islice(files, status.current_index, None):
-                full_path = root / file_meta.file_path
-                if not full_path.exists():
-                    continue
-
-                # Send input
-                try:
-                    process.stdin.write(str(full_path) + "\n")
-                    # Even though we use line buffer (bufsize=1) and we append "\n"
-                    # it's still better to flush explicitly to be safe
-                    process.stdin.flush()
-                except (BrokenPipeError, OSError):
-                    # Ctags crashed or was closed
-                    return
-
-                current_file_tags: list[str] = []
-                while True:
-                    raw_line = process.stdout.readline()
+            if process.stdout:
+                for line in process.stdout:
                     # Empty string from readline() means EOF (stream closed) - exit loop
-                    if raw_line == "":
-                        return
+                    if line == "":
+                        return (None, current_index)
 
-                    raw_line = raw_line.strip()
+                    line = line.strip()
                     # Empty string after strip means blank/whitespace-only line - skip it
-                    if not raw_line:
+                    if not line:
                         continue
 
-                    if raw_line == terminator:
-                        break
+                    ctag = _parse_tag_line(line)
+                    if not ctag:
+                        continue
 
-                    ctag = _parse_tag_line(raw_line)
-                    print(full_path, ctag)
-                    if ctag:
-                        current_file_tags.append(format_tag(ctag.kind, ctag.name))
-                yield str(file_meta.file_path), "\n".join(current_file_tags)
+                    if ctag.path != current_file_path:
+                        if current_file_path:
+                            processed_files.append(
+                                ProcessedFile(
+                                    str(current_file_path),
+                                    str(category),
+                                    "\n".join(current_file_tags),
+                                )
+                            )
+                        current_file_path = ctag.path
+                        current_file_tags = []
+                        current_index += 1
+
+                    current_file_tags.append(format_tag(ctag.kind, ctag.name))
+
+            if current_file_path:
+                processed_files.append(
+                    ProcessedFile(
+                        str(current_file_path),
+                        str(category),
+                        "\n".join(current_file_tags),
+                    )
+                )
+                current_index += 1
     except (OSError, subprocess.SubprocessError):
-        return
+        return (None, current_index)
+
+    return (processed_files, current_index)
 
 
 def _parse_tag_line(line: str) -> Optional[Ctag]:
