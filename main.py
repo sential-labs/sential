@@ -34,7 +34,6 @@ Dependencies:
 """
 
 from pathlib import Path
-import pathlib
 from typing import Annotated, Optional
 import typer
 from rich import print as pr
@@ -59,7 +58,7 @@ def main(
             resolve_path=True,  # Automatically converts to absolute path
             help="Root path from which Sential will start identifying modules",
         ),
-    ] = pathlib.Path().resolve(),  # If not provided, chose the path where the user ran the command
+    ] = Path.cwd(),  # If not provided, use the current working directory
     language: Annotated[
         Optional[str],
         typer.Option(help=f"Available languages: {', '.join(list(SupportedLanguage))}"),
@@ -88,7 +87,7 @@ def main(
     git_client = GitClient(path)
     if not git_client.is_repo():
         pr(f"[red]Error:[/red] Not a git repository: [green]'{path}'[/green]")
-        raise typer.Exit()
+        raise typer.Exit(code=1)
 
     # Validate language passed by user
     # If not passed, open language selection
@@ -102,29 +101,16 @@ def main(
     pr(f"\n[green]Language selected: {language}...[/green]\n")
     pr(f"[green]Scanning: {path}...[/green]\n")
 
-    raw_stream = git_client.stream_file_paths()
-    categorized_files = categorize_files(raw_stream, language)
-    processed_files = process_files(path, categorized_files)
-    p = write_processed_files(processed_files)
-    print(p)
-
-    # scopes = select_scope(path, language)
-    # try:
-    #     with FileInventoryWriter(
-    #         path, scopes, language, GitClient(path), RichProgressCallback()
-    #     ) as writer:
-    #         pr("\n[bold magenta]🔍 Sifting through your codebase...")
-    #         inventory_result = writer.process()
-    #         tags_map = generate_tags_jsonl(
-    #             path,
-    #             inventory_result,
-    #             language,
-    #         )
-    #         print(tags_map)
-    # except EmptyInventoryError as e:
-    #     print_empty_inventory_err(e, language)
-    # except TempFileError as e:
-    #     print_temp_file_err(e)
+    try:
+        raw_stream = git_client.stream_file_paths()
+        categorized_files = categorize_files(raw_stream, language)
+        processed_files = process_files(path, categorized_files)
+        output_path = write_processed_files(processed_files)
+        pr(f"\n[green]✓ Processing complete. Output: {output_path}[/green]")
+    except EmptyInventoryError as e:
+        print_empty_inventory_err(e, language)
+    except TempFileError as e:
+        print_temp_file_err(e)
 
 
 def normalize_language(language: Optional[str]) -> SupportedLanguage:
@@ -147,15 +133,14 @@ def normalize_language(language: Optional[str]) -> SupportedLanguage:
             provided language string doesn't match any supported language
             (case-insensitive).
     """
-    # Validate language selection
-    if language:
+    if not language:
+        raise ValueError("No language provided")
 
-        language = language.strip().lower()
-
-        for l in SupportedLanguage:
-            if l.lower() == language:
-                return l
-    raise ValueError
+    normalized = language.strip().lower()
+    for lang in SupportedLanguage:
+        if str(lang).lower() == normalized:
+            return lang
+    raise ValueError(f"Unsupported language: {language}")
 
 
 def print_empty_inventory_err(
@@ -210,7 +195,7 @@ def print_temp_file_err(e: TempFileError) -> None:
     pr("\n--- PLEASE REPORT THIS ---")
     pr(f"Error Context: {e}")
     pr(f"Diagnostics: {e.diagnostic_info}")
-    raise typer.Exit(code=1)
+    raise typer.Exit(code=1) from e
 
 
 if __name__ == "__main__":
