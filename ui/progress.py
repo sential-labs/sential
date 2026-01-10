@@ -59,7 +59,7 @@ def create_progress() -> Progress:
     )
 
 
-def create_task(progress: Progress, description: str, total: float) -> TaskID:
+def create_task(progress: Progress, description: str, total: Optional[int]) -> TaskID:
     """
     Creates a new task in a progress instance with initial state.
 

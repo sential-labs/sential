@@ -12,6 +12,8 @@ from adapters.ctags import get_ctags_path
 from constants import CTAGS_KINDS, LANGUAGES_HEURISTICS, UNIVERSAL_CONTEXT_FILES
 from core.models import Ctag
 from models import SupportedLanguage
+from rich import print as pr
+from ui.progress_callback import RichProgressCallback
 from utils import read_file
 
 
@@ -136,16 +138,41 @@ class TokenBudget:
 
 
 def categorize_files(
-    raw_stream: Generator[Path, None, None], language: SupportedLanguage
+    raw_stream: Generator[Path, None, None],
+    total_files: int,
+    language: SupportedLanguage,
 ) -> dict[FileCategory, list[FileMetadata]]:
     files_by_category: dict[FileCategory, list[FileMetadata]] = {
         category: [] for category in FileCategory
     }
 
-    for file_path in raw_stream:
-        print(file_path.resolve())
-        file_metadata = calculate_significance(file_path, language)
-        files_by_category[file_metadata.category].append(file_metadata)
+    pr("\n[bold magenta]🔍 Sifting through your codebase...")
+
+    items_processed = 0
+    # Increase progress by 10% increments
+    advance = int(total_files * 0.1)
+
+    with RichProgressCallback() as callback:
+        callback.on_start(
+            f"Categorizing {total_files} files...",
+            total=total_files,
+        )
+        for file_path in raw_stream:
+            file_metadata = calculate_significance(file_path, language)
+            files_by_category[file_metadata.category].append(file_metadata)
+
+            items_processed += 1
+            if items_processed % advance == 0:
+                callback.on_update(advance=advance)
+
+        kept_files_count = sum(
+            len(f)
+            for cat, f in files_by_category.items()
+            if cat != FileCategory.UNKNOWN
+        )
+        callback.on_complete(
+            f"✅ Found {kept_files_count} relevant files.", completed=total_files
+        )
 
     return files_by_category
 
@@ -233,22 +260,50 @@ def process_readable_files_for_category(
 ) -> None:
 
     category = status.category
+
+    category_to_text = {
+        FileCategory.CONTEXT: {
+            "description": "📖 Establishing project context...",
+            "name": "context files",
+        },
+        FileCategory.MANIFEST: {
+            "description": "📦 Analyzing manifest & dependency files...",
+            "name": "manifest files",
+        },
+        FileCategory.SIGNAL: {
+            "description": "🎯 Identifying high-signal entry points...",
+            "name": "high-signal files",
+        },
+    }
+    files_processed = 0
+
+    pr(f"\n[bold magenta]{category_to_text[category]["description"]}[/bold magenta]")
+
     token_budget.start_category(category)
-    for file_meta in islice(files, None):
-        full_path = root / file_meta.file_path
-        if not full_path.exists():
-            continue
 
-        content = read_file(full_path)
+    with RichProgressCallback() as callback:
+        callback.on_start(f"Reading {category_to_text[category]["name"]}...", None)
 
-        token_usage = counter.count(content)
-        if token_budget.can_afford(token_usage):
-            token_budget.spend(token_usage)
-            status.append(
-                ProcessedFile(str(file_meta.file_path), category.value, content)
-            )
-        else:
-            break
+        for file_meta in islice(files, None):
+            full_path = root / file_meta.file_path
+            if not full_path.exists():
+                continue
+
+            content = read_file(full_path)
+
+            token_usage = counter.count(content)
+            if token_budget.can_afford(token_usage):
+                token_budget.spend(token_usage)
+                status.append(
+                    ProcessedFile(str(file_meta.file_path), category.value, content)
+                )
+                files_processed += 1
+            else:
+                break
+
+        callback.on_complete(
+            f"✅ Read {files_processed} {category_to_text[category]["name"]}.", 100, 100
+        )
 
 
 def calculate_significance(
@@ -363,22 +418,41 @@ def extract_ctags_for_source_files(
     status: CategoryProcessedFiles,
 ) -> None:
 
+    pr("\n[bold magenta]👀  Looking into source files...[/bold magenta]")
+
     start = 0
+    files_processed = 0
+
     token_budget.start_category(status.category)
-    while True:
-        processed_files, start = _run_ctags(root, files, start)
 
-        if not processed_files or start >= len(files):
-            break
+    with RichProgressCallback() as callback:
+        callback.on_start("Generating code symbols...", None)
+        budget_exhausted = False
+        while True:
+            processed_files, start = _run_ctags(root, files, start)
 
-        for file in processed_files:
-            token_usage = counter.count(file.content)
+            if not processed_files or start >= len(files):
+                break
 
-            if token_budget.can_afford(token_usage):
-                token_budget.spend(token_usage)
-                status.append(file)
-            else:
-                return
+            for file in processed_files:
+                token_usage = counter.count(file.content)
+
+                if token_budget.can_afford(token_usage):
+                    token_budget.spend(token_usage)
+                    status.append(file)
+                    files_processed += 1
+                else:
+                    budget_exhausted = True
+                    break
+
+            if budget_exhausted:
+                break
+
+        callback.on_complete(
+            f"✅ Generated code symbols for {files_processed} files.",
+            total=100,
+            completed=100,
+        )
 
     # Pass files and start_index/status.current_index to a function
     # it should run ctags on up to 100 files from the files list
@@ -455,8 +529,8 @@ def _run_ctags(
                         if current_file_path:
                             processed_files.append(
                                 ProcessedFile(
-                                    str(current_file_path),
-                                    str(category),
+                                    _get_rel_path_str_from_str(root, current_file_path),
+                                    category.value,
                                     "\n".join(current_file_tags),
                                 )
                             )
@@ -469,8 +543,8 @@ def _run_ctags(
             if current_file_path:
                 processed_files.append(
                     ProcessedFile(
-                        str(current_file_path),
-                        str(category),
+                        _get_rel_path_str_from_str(root, current_file_path),
+                        category.value,
                         "\n".join(current_file_tags),
                     )
                 )
@@ -479,6 +553,12 @@ def _run_ctags(
         return (None, current_index)
 
     return (processed_files, current_index)
+
+
+def _get_rel_path_str_from_str(root: Path, full_path_str: str) -> str:
+    full_path = Path(full_path_str)
+    relative_str = str(full_path.relative_to(root))
+    return relative_str
 
 
 def _parse_tag_line(line: str) -> Optional[Ctag]:

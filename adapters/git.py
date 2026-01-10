@@ -50,7 +50,9 @@ class GitClient:
                 ["git", "rev-parse", "--is-inside-work-tree"],
                 cwd=self.root,
                 text=True,
-                check=True,
+                check=True,  # This triggers except block
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
             return True
         except subprocess.CalledProcessError:

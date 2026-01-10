@@ -102,8 +102,11 @@ def main(
     pr(f"[green]Scanning: {path}...[/green]\n")
 
     try:
+        files_in_path = git_client.count_files()
         raw_stream = git_client.stream_file_paths()
-        categorized_files = categorize_files(raw_stream, language)
+
+        categorized_files = categorize_files(raw_stream, files_in_path, language)
+
         processed_files = process_files(path, categorized_files)
         output_path = write_processed_files(processed_files)
         pr(f"\n[green]✓ Processing complete. Output: {output_path}[/green]")

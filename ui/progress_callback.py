@@ -117,7 +117,7 @@ class RichProgressCallback:
         if self._progress:
             self._progress.__exit__(exc_type, exc_val, exc_tb)
 
-    def on_start(self, description: str, total: int) -> None:
+    def on_start(self, description: str, total: Optional[int]) -> None:
         """
         Initialize progress reporting for a new task.
 
@@ -170,7 +170,9 @@ class RichProgressCallback:
                 advance=advance,
             )
 
-    def on_complete(self, description: str, completed: int) -> None:
+    def on_complete(
+        self, description: str, completed: int, total: Optional[int] = None
+    ) -> None:
         """
         Mark the task as complete.
 
@@ -189,6 +191,7 @@ class RichProgressCallback:
             self._task,
             ProgressState.COMPLETE,
             completed=completed,
+            total=total,
             description=description,
         )
 
