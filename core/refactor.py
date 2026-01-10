@@ -1,4 +1,3 @@
-import contextlib
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from itertools import islice

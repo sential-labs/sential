@@ -6,6 +6,7 @@ away from the core processing logic, making it easier to test and swap
 implementations (e.g., Rich UI, logging, metrics).
 """
 
+from types import TracebackType
 from typing import Optional, Protocol
 
 from rich.progress import Progress, TaskID
@@ -35,11 +36,14 @@ class ProgressCallback(Protocol):
 
     def __enter__(self) -> "ProgressCallback":
         """Enter the progress callback context."""
-        ...
 
-    def __exit__(self, *args) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         """Exit the progress callback context."""
-        ...
 
     def on_start(self, description: str, total: int) -> None:
         """
@@ -49,7 +53,6 @@ class ProgressCallback(Protocol):
             total: Total number of items to process.
             description: Initial description text to display.
         """
-        ...
 
     def on_update(
         self, *, advance: Optional[int] = None, description: Optional[str] = None
@@ -69,7 +72,6 @@ class ProgressCallback(Protocol):
             - `on_update(description="...")` - just update description
             - `on_update(advance=5, description="...")` - both
         """
-        ...
 
     def on_complete(self, description: str, completed: int) -> None:
         """
@@ -78,7 +80,6 @@ class ProgressCallback(Protocol):
         Args:
             description: Final description text to display.
         """
-        ...
 
 
 class RichProgressCallback:
@@ -90,12 +91,12 @@ class RichProgressCallback:
     on Rich UI components.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the callback. Progress instance is created lazily."""
         self._progress: Optional[Progress] = None
         self._task: Optional[TaskID] = None
 
-    def __enter__(self):
+    def __enter__(self) -> "RichProgressCallback":
         """
         Enter the progress context (creates the Rich Progress instance).
 
@@ -106,10 +107,15 @@ class RichProgressCallback:
         self._progress.__enter__()
         return self
 
-    def __exit__(self, *args):
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         """Exit the progress context (cleans up Rich Progress)."""
         if self._progress:
-            self._progress.__exit__(*args)
+            self._progress.__exit__(exc_type, exc_val, exc_tb)
 
     def on_start(self, description: str, total: int) -> None:
         """
@@ -201,18 +207,14 @@ class NoOpProgressCallback:
 
     def __exit__(self, *args) -> None:
         """Exit the progress callback context (no-op)."""
-        pass
 
     def on_start(self, description: str, total: int) -> None:
         """No-op: does nothing."""
-        pass
 
     def on_update(
         self, *, advance: Optional[int] = None, description: Optional[str] = None
     ) -> None:
         """No-op: does nothing."""
-        pass
 
     def on_complete(self, description: str, completed: int) -> None:
         """No-op: does nothing."""
-        pass
