@@ -8,7 +8,6 @@ states (in progress, complete, warning, error) with color coding.
 """
 
 from enum import StrEnum
-from typing import Optional
 
 from rich.progress import (
     BarColumn,
@@ -49,7 +48,7 @@ def create_progress() -> Progress:
     feel across all progress indicators in the application.
 
     Returns:
-        Progress: A configured Rich Progress instance ready for task management.
+        A configured Rich Progress instance ready for task management.
     """
     return Progress(
         SpinnerColumn(),
@@ -59,7 +58,7 @@ def create_progress() -> Progress:
     )
 
 
-def create_task(progress: Progress, description: str, total: float) -> TaskID:
+def create_task(progress: Progress, description: str, total: int | None) -> TaskID:
     """
     Creates a new task in a progress instance with initial state.
 
@@ -67,10 +66,10 @@ def create_task(progress: Progress, description: str, total: float) -> TaskID:
     count. The task is initialized with the IN_PROGRESS state (magenta color).
 
     Args:
-        progress (Progress): The Rich Progress instance to add the task to.
-        description (str): The description text to display for this task.
-        total (float): The total number of items or steps for this task.
-            Use float('inf') for indeterminate progress.
+        progress: The Rich Progress instance to add the task to.
+        description: The description text to display for this task.
+        total: The total number of items or steps for this task. If None,
+            progress is indeterminate (no progress bar shown).
 
     Returns:
         TaskID: The unique identifier for the created task, used for updates.
@@ -81,11 +80,11 @@ def create_task(progress: Progress, description: str, total: float) -> TaskID:
 def update_progress(
     progress: Progress,
     task: TaskID,
-    progress_state: Optional[ProgressState] = None,
-    total: Optional[float] = None,
-    completed: Optional[float] = None,
-    advance: Optional[float] = None,
-    description: Optional[str] = None,
+    progress_state: ProgressState | None = None,
+    total: float | None = None,
+    completed: float | None = None,
+    advance: float | None = None,
+    description: str | None = None,
 ) -> None:
     """
     Updates a progress task with new state, progress, or description.
@@ -99,18 +98,18 @@ def update_progress(
     state color.
 
     Args:
-        progress (Progress): The Rich Progress instance containing the task.
-        task (TaskID): The identifier of the task to update.
-        progress_state (Optional[ProgressState]): The new state to apply
-            (affects color). Must be provided together with description.
-        total (Optional[float]): The new total count for the task. If None,
-            the existing total is unchanged.
-        completed (Optional[float]): The absolute number of completed items.
-            Mutually exclusive with `advance`.
-        advance (Optional[float]): The number of items to advance by (relative).
-            Mutually exclusive with `completed`.
-        description (Optional[str]): The new description text. Must be provided
-            together with progress_state.
+        progress: The Rich Progress instance containing the task.
+        task: The identifier of the task to update.
+        progress_state: The new state to apply (affects color). Must be provided
+            together with description.
+        total: The new total count for the task. If None, the existing total
+            is unchanged.
+        completed: The absolute number of completed items. Mutually exclusive
+            with `advance`.
+        advance: The number of items to advance by (relative). Mutually
+            exclusive with `completed`.
+        description: The new description text. Must be provided together with
+            progress_state.
 
     Raises:
         ValueError: If progress_state and description are not both provided

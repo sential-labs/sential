@@ -1,6 +1,6 @@
 # Sential
 
-**Sential is Source Available. It is free for personal use and open for contribution. For commercial use in teams > 3, please [contact us] or see LICENSE.**
+**Sential is Source Available. It is free for personal use and open for contribution. For commercial use in teams > 3, please [contact us](mailto:florin@sential.ai) or see LICENSE.**
 
 Sential is a local-first tool designed to generate high-signal context bridges from Git repositories. It helps developers quickly understand codebases by intelligently filtering and extracting the most relevant code symbols and context files, then synthesizing comprehensive onboarding guides through a sophisticated two-phase architecture.
 
@@ -112,9 +112,58 @@ The generated onboarding guide serves as both:
 
 ## Installation
 
+### Prerequisites
+
+- Python 3.11 or higher
+- Git (for repository scanning)
+
+### Install from Source
+
+Clone the repository and install in development mode:
+
 ```bash
-# Installation instructions coming soon
+# Clone the repository
+git clone <repository-url>
+cd sential
+
+# Install in development mode with all dependencies
+pip install -e ".[dev]"
 ```
+
+This will install:
+- All production dependencies (typer, inquirer, tiktoken, rich)
+- Development dependencies (pytest, pytest-mock, pytest-cov, pytest-xdist)
+
+### Development Setup
+
+For development, you can install with just the dev dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
+Then run tests:
+
+```bash
+# Run all tests
+pytest
+
+# Run tests with coverage
+pytest --cov
+
+# Run tests in parallel
+pytest -n auto
+```
+
+### Building Standalone Executable
+
+To build a standalone executable using PyInstaller:
+
+```bash
+python build.py
+```
+
+This creates a single-file executable named `sential` that includes all dependencies and the ctags binaries.
 
 ## Usage
 
@@ -148,7 +197,7 @@ The generated guide serves as both onboarding documentation and a reference for 
 
 ## Architecture
 
-See [ARCHITECTURE.md](cli/ARCHITECTURE.md) for detailed technical specifications.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical specifications.
 
 ## License
 
@@ -165,6 +214,30 @@ This project is licensed under the Business Source License 1.1 (BUSL 1.1). See [
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+### Development Setup
+
+1. Fork the repository and clone it locally
+2. Install in development mode:
+   ```bash
+   pip install -e ".[dev]"
+   ```
+3. Run tests to ensure everything works:
+   ```bash
+   pytest
+   ```
+4. Make your changes and ensure tests pass
+5. Submit a Pull Request
+
+### Project Structure
+
+The project uses `pyproject.toml` for configuration, which includes:
+- Project metadata and dependencies
+- Pytest configuration for testing
+- Coverage settings
+- Build system configuration
+
+All dependencies are managed through `pyproject.toml` - there's no need to manually manage `requirements.txt`.
+
 ## Contact
 
-For commercial licensing inquiries, please [contact us].
+For commercial licensing inquiries, please [contact us](mailto:florin@sential.ai).

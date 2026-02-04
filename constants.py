@@ -28,6 +28,30 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "extensions": frozenset({".py", ".pyi"}),
+        "signals": frozenset(
+            {
+                "__init__",
+                "__main__",
+                "main",
+                "app",
+                "wsgi",
+                "asgi",
+                "manage",
+                "run",
+                "application",
+                "server",
+            },
+        ),
+        "ignore_dirs": frozenset(
+            {
+                "tests",
+                "test",
+                "mocks",
+                "benchmarks",
+                "scripts",
+                "htmlcov",
+            }
+        ),
     },
     SupportedLanguage.JS: {
         "manifests": frozenset(
@@ -42,7 +66,27 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "extensions": frozenset(
-            {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"}
+            {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".velte", ".astro"}
+        ),
+        "signals": frozenset(
+            {
+                "index",
+                "main",
+                "app",
+                "server",
+                "entry",
+                "bootstrap",
+                "start",
+            }
+        ),
+        "ignore_dirs": frozenset(
+            {
+                "tests",
+                "__tests__",
+                "mocks",
+                "e2e",
+                "cypress",
+            }
         ),
     },
     SupportedLanguage.JAVA: {
@@ -57,6 +101,14 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "extensions": frozenset({".java", ".kt", ".scala", ".groovy"}),
+        "signals": frozenset(
+            {
+                "main",
+                "application",
+                "app",
+            }
+        ),
+        "ignore_dirs": frozenset({"test", "tests", "mocks", "samples", "it"}),
     },
     SupportedLanguage.CS: {
         "manifests": frozenset(
@@ -70,6 +122,18 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "extensions": frozenset({".cs", ".fs", ".vb", ".cshtml", ".razor"}),
+        "signals": frozenset(
+            {
+                "program",
+                "startup",
+                "app",
+                "main",
+                "module1",
+            }
+        ),
+        "ignore_dirs": frozenset(
+            {"tests", "test", "mocks", "spec", "samples", "TestResults"}
+        ),
     },
     SupportedLanguage.GO: {
         "manifests": frozenset(
@@ -81,6 +145,18 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "extensions": frozenset({".go"}),
+        "signals": frozenset(
+            {
+                "main",
+                "server",
+                "app",
+                "cmd",
+                "doc",
+            }
+        ),
+        "ignore_dirs": frozenset(
+            {"tests", "test", "vendor", "testdata", "mocks", "bench"}
+        ),
     },
     SupportedLanguage.CPP: {
         "manifests": frozenset(
@@ -108,35 +184,53 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
                 ".mm",
             }
         ),
+        "signals": frozenset(
+            {
+                "main",
+                "app",
+                "application",
+            }
+        ),
+        "ignore_dirs": frozenset(
+            {
+                "tests",
+                "test",
+                "mocks",
+                "samples",
+                "third_party",
+                "vendor",
+                "external",
+            }
+        ),
     },
 }
 
-# Set of ctags symbol kinds that are extracted and included in the output.
-# This set defines which types of code symbols (classes, functions, etc.) are
+# Tuple of ctags symbol kinds that are extracted and included in the output.
+# This tuple defines which types of code symbols (classes, functions, etc.) are
 # considered valuable for context generation. Symbols with kinds not in this
-# set are filtered out during ctags processing to reduce noise and token usage.
-# The set includes:
+# tuple are filtered out during ctags processing to reduce noise and token usage.
+# The tuple includes (in order):
 # - Core logic symbols: class, method, function
 # - Data structures: struct, enum, union, interface, typedef, type
 # - Hierarchy symbols: namespace, module, package
-CTAGS_KINDS: Final[frozenset[str]] = frozenset(
-    {
-        # The Core Logic
-        "class",
-        "method",
-        "function",
-        # The Data Structures
-        "struct",
-        "enum",
-        "union",
-        "interface",
-        "typedef",
-        "type",
-        # The Hierarchy (Crucial for C#/C++)
-        "namespace",
-        "module",
-        "package",
-    }
+# Note: Using a tuple instead of a set ensures deterministic ordering for
+# test parametrization when running tests in parallel with pytest-xdist.
+CTAGS_KINDS: Final[tuple[str, ...]] = (
+    # The Core Logic
+    "class",
+    "method",
+    "function",
+    # The Data Structures
+    "struct",
+    "enum",
+    "union",
+    "interface",
+    "typedef",
+    "type",
+    # The Hierarchy (Crucial for C#/C++)
+    "namespace",
+    "module",
+    "package",
 )
 
 # Universal context files that define the "soul" of a project.
