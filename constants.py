@@ -47,11 +47,9 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
                 "tests",
                 "test",
                 "mocks",
-                "examples",
                 "benchmarks",
                 "scripts",
                 "htmlcov",
-                "docs",
             }
         ),
     },
@@ -86,12 +84,8 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
                 "tests",
                 "__tests__",
                 "mocks",
-                "stories",
-                "examples",
                 "e2e",
                 "cypress",
-                "docs",
-                "spec",
             }
         ),
     },
@@ -114,9 +108,7 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
                 "app",
             }
         ),
-        "ignore_dirs": frozenset(
-            {"test", "tests", "mocks", "examples", "samples", "docs", "it"}
-        ),
+        "ignore_dirs": frozenset({"test", "tests", "mocks", "samples", "it"}),
     },
     SupportedLanguage.CS: {
         "manifests": frozenset(
@@ -140,7 +132,7 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "ignore_dirs": frozenset(
-            {"tests", "test", "mocks", "examples", "spec", "samples", "TestResults"}
+            {"tests", "test", "mocks", "spec", "samples", "TestResults"}
         ),
     },
     SupportedLanguage.GO: {
@@ -163,7 +155,7 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
             }
         ),
         "ignore_dirs": frozenset(
-            {"tests", "test", "examples", "vendor", "testdata", "mocks", "bench"}
+            {"tests", "test", "vendor", "testdata", "mocks", "bench"}
         ),
     },
     SupportedLanguage.CPP: {
@@ -204,7 +196,6 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
                 "tests",
                 "test",
                 "mocks",
-                "examples",
                 "samples",
                 "third_party",
                 "vendor",
@@ -214,32 +205,32 @@ LANGUAGES_HEURISTICS: Final[Mapping[SupportedLanguage, LanguagesHeuristics]] = {
     },
 }
 
-# Set of ctags symbol kinds that are extracted and included in the output.
-# This set defines which types of code symbols (classes, functions, etc.) are
+# Tuple of ctags symbol kinds that are extracted and included in the output.
+# This tuple defines which types of code symbols (classes, functions, etc.) are
 # considered valuable for context generation. Symbols with kinds not in this
-# set are filtered out during ctags processing to reduce noise and token usage.
-# The set includes:
+# tuple are filtered out during ctags processing to reduce noise and token usage.
+# The tuple includes (in order):
 # - Core logic symbols: class, method, function
 # - Data structures: struct, enum, union, interface, typedef, type
 # - Hierarchy symbols: namespace, module, package
-CTAGS_KINDS: Final[frozenset[str]] = frozenset(
-    {
-        # The Core Logic
-        "class",
-        "method",
-        "function",
-        # The Data Structures
-        "struct",
-        "enum",
-        "union",
-        "interface",
-        "typedef",
-        "type",
-        # The Hierarchy (Crucial for C#/C++)
-        "namespace",
-        "module",
-        "package",
-    }
+# Note: Using a tuple instead of a set ensures deterministic ordering for
+# test parametrization when running tests in parallel with pytest-xdist.
+CTAGS_KINDS: Final[tuple[str, ...]] = (
+    # The Core Logic
+    "class",
+    "method",
+    "function",
+    # The Data Structures
+    "struct",
+    "enum",
+    "union",
+    "interface",
+    "typedef",
+    "type",
+    # The Hierarchy (Crucial for C#/C++)
+    "namespace",
+    "module",
+    "package",
 )
 
 # Universal context files that define the "soul" of a project.

@@ -8,10 +8,28 @@ and provides streaming generators for memory-efficient file path enumeration.
 
 from pathlib import Path
 import subprocess
-from typing import Generator, Optional
+from typing import Protocol
 
 
-class GitClient:
+class GitClient(Protocol):
+    """
+    Protocol defining the interface for Git repository clients.
+
+    This protocol specifies the required methods that any Git client implementation
+    must provide for repository discovery and file enumeration operations.
+    """
+
+    def is_repo(self) -> bool:
+        """Check if path is a Git repository."""
+
+    def count_files(self) -> int:
+        """Count files in repository."""
+
+    def get_file_paths_list(self) -> list[Path]:
+        """Get list of file paths."""
+
+
+class SubprocessGitClient:
     """
     Client for interacting with Git repositories.
 
@@ -60,17 +78,14 @@ class GitClient:
 
     def count_files(self) -> int:
         """
-        Efficiently counts the number of lines (files) in a Git command output.
+        Efficiently counts the number of files in the Git repository.
 
-        This function executes the provided command and streams the output to count newlines
-        without loading the entire output into memory. This is used to calculate totals for
-        progress bars before processing begins.
-
-        Args:
-            scopes (list[str]): The paths for git to look into to count files
+        This method executes `git ls-files` and streams the output to count newlines
+        without loading the entire output into memory. This is used to calculate totals
+        for progress bars before processing begins.
 
         Returns:
-            int: The total number of lines/files returned by the command.
+            int: The total number of files returned by the git ls-files command.
         """
 
         # Construct the command: git ls-files ... -- path1 path2
@@ -87,34 +102,44 @@ class GitClient:
 
         return count
 
-    def stream_file_paths(self) -> Generator[Path, None, None]:
+    def get_file_paths_list(self) -> list[Path]:
         """
-        Lazily yield all relevant file paths from the Git index and working tree
-        in ascending alphabetical order.
+        Return all relevant file paths from the Git index and working tree.
 
         This method executes `git ls-files` to retrieve a list of files that are either
         cached (tracked) or untracked but not ignored (respecting `.gitignore`).
-        It uses a subprocess pipe to stream results line-by-line, ensuring memory efficiency
-        for large repositories.
+        It uses a subprocess pipe to read results line-by-line.
 
-        Args:
-            scopes: Optional list of relative paths to restrict the search to specific
-                directories. If provided, only files within these scopes are returned.
-                If None, all files in the repository are returned.
-
-        Yields:
-            Path: A relative path object (relative to repository root) for each file
-                found in the repository.
+        Returns:
+            list[Path]: A list of relative path objects (relative to repository root)
+                for each file found in the repository.
         """
+        file_paths: list[Path] = []
 
         with self._create_subprocess(self.cmd) as process:
             if process.stdout:
                 for p in process.stdout:
-                    yield Path(p.strip())
+                    file_paths.append(Path(p.strip()))
 
             process.wait()
 
+        return file_paths
+
     def _create_subprocess(self, cmd: list[str]) -> subprocess.Popen[str]:
+        """
+        Create a subprocess for executing Git commands with streaming output.
+
+        This helper method creates a subprocess configured for line-buffered text output,
+        allowing efficient streaming of command results without loading everything into
+        memory at once.
+
+        Args:
+            cmd: The command to execute as a list of strings.
+
+        Returns:
+            subprocess.Popen[str]: A subprocess object with stdout configured as a pipe
+                for streaming, stderr suppressed, and line-buffered text mode enabled.
+        """
         return subprocess.Popen(
             cmd,
             cwd=self.root,
@@ -123,3 +148,57 @@ class GitClient:
             text=True,
             bufsize=1,
         )
+
+
+class MockGitClient:
+    """
+    Mock implementation of GitClient for testing.
+
+    Provides configurable behavior for Git operations without requiring
+    actual Git repositories or subprocess execution. Tracks method calls
+    for test verification.
+    """
+
+    def __init__(
+        self,
+        is_repo_return: bool = True,
+        count_files_return: int = 0,
+        file_paths_list_return: list[Path] | None = None,
+    ):
+        """
+        Initialize MockGitClient with configurable behavior.
+
+        Args:
+            is_repo_return: Return value for is_repo() calls. Defaults to True.
+            count_files_return: Return value for count_files() calls. Defaults to 0.
+            file_paths_list_return: Return value for get_file_paths_list() calls.
+                If None, defaults to empty list.
+
+        Attributes (for test inspection):
+            is_repo_calls: Number of times is_repo() was called.
+            count_files_calls: Number of times count_files() was called.
+            get_file_paths_list_calls: Number of times get_file_paths_list() was called.
+        """
+        self.is_repo_return = is_repo_return
+        self.count_files_return = count_files_return
+        self.file_paths_list_return = file_paths_list_return or []
+
+        # Track calls for test inspection
+        self.is_repo_calls: int = 0
+        self.count_files_calls: int = 0
+        self.get_file_paths_list_calls: int = 0
+
+    def is_repo(self) -> bool:
+        """Check if path is a Git repository (tracks call, returns configured value)."""
+        self.is_repo_calls += 1
+        return self.is_repo_return
+
+    def count_files(self) -> int:
+        """Count files in repository (tracks call, returns configured value)."""
+        self.count_files_calls += 1
+        return self.count_files_return
+
+    def get_file_paths_list(self) -> list[Path]:
+        """Get list of file paths (tracks call, returns configured value)."""
+        self.get_file_paths_list_calls += 1
+        return self.file_paths_list_return

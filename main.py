@@ -34,15 +34,23 @@ Dependencies:
 """
 
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
+import json
 import typer
 from rich import print as pr
-from adapters.git import GitClient
+import inquirer  # type: ignore
+from inquirer.themes import GreenPassion  # type: ignore
+from adapters.git import SubprocessGitClient
 from constants import SupportedLanguage
-from core.exceptions import EmptyInventoryError, TempFileError
-from core.refactor import categorize_files, process_files, write_processed_files
-from ui.prompts import make_language_selection
-
+from core.exceptions import (
+    FileIOError,
+    FileWriteError,
+    InvalidFilePathError,
+    TempFileError,
+)
+from core.file_io import FilesystemFileWriter
+from core.processing import process_files
+from core.categorization import categorize_files
 
 app = typer.Typer()
 
@@ -60,7 +68,7 @@ def main(
         ),
     ] = Path.cwd(),  # If not provided, use the current working directory
     language: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help=f"Available languages: {', '.join(list(SupportedLanguage))}"),
     ] = None,
 ):
@@ -84,7 +92,7 @@ def main(
     """
 
     # Validate path is git repository
-    git_client = GitClient(path)
+    git_client = SubprocessGitClient(path)
     if not git_client.is_repo():
         pr(f"[red]Error:[/red] Not a git repository: [green]'{path}'[/green]")
         raise typer.Exit(code=1)
@@ -102,21 +110,40 @@ def main(
     pr(f"[green]Scanning: {path}...[/green]\n")
 
     try:
-        files_in_path = git_client.count_files()
-        raw_stream = git_client.stream_file_paths()
-
-        categorized_files = categorize_files(raw_stream, files_in_path, language)
-
-        processed_files = process_files(path, categorized_files)
-        output_path = write_processed_files(processed_files)
-        pr(f"\n[green]✓ Processing complete. Output: {output_path}[/green]")
-    except EmptyInventoryError as e:
-        print_empty_inventory_err(e, language)
+        fw = FilesystemFileWriter.from_named_tempfile("sential_payload")
     except TempFileError as e:
         print_temp_file_err(e)
+        return
+
+    try:
+        prompt_data = {"type": "prompt", "content": "<prompt>"}
+        fw.write_file(json.dumps(prompt_data) + "\n", mode="w")
+
+        files_in_path = git_client.count_files()
+        file_paths_list = git_client.get_file_paths_list()
+
+        categorized_files = categorize_files(file_paths_list, files_in_path, language)
+
+        processed_files = process_files(path, categorized_files)
+        fw.append_processed_files(processed_files)
+
+        file_paths_data = {
+            "type": "file_paths",
+            "paths": [str(p) for p in file_paths_list],
+        }
+        fw.append_jsonl_line(file_paths_data)
+        pr(f"\n[green]✓ Processing complete. Output: {fw.file_path}[/green]")
+    except TempFileError as e:
+        print_temp_file_err(e)
+    except (FileWriteError, InvalidFilePathError) as e:
+        print_file_io_err(e)
+    except Exception as e:  # noqa: BLE001
+        # Catch-all for any unexpected errors - ensures users always see
+        # a friendly message instead of a raw Python stack trace
+        print_unexpected_err(e)
 
 
-def normalize_language(language: Optional[str]) -> SupportedLanguage:
+def normalize_language(language: str | None) -> SupportedLanguage:
     """
     Normalizes and validates a language string to a SupportedLanguage enum value.
 
@@ -125,7 +152,7 @@ def normalize_language(language: Optional[str]) -> SupportedLanguage:
     the string doesn't match any supported language, raises ValueError.
 
     Args:
-        language (Optional[str]): The language string to normalize. Can be None,
+        language (str | None): The language string to normalize. Can be None,
             empty, or a string representation of a supported language.
 
     Returns:
@@ -144,34 +171,6 @@ def normalize_language(language: Optional[str]) -> SupportedLanguage:
         if str(lang).lower() == normalized:
             return lang
     raise ValueError(f"Unsupported language: {language}")
-
-
-def print_empty_inventory_err(
-    e: EmptyInventoryError, language: SupportedLanguage
-) -> None:
-    """
-    Displays a user-friendly error message when no files are found.
-
-    Prints formatted error messages to inform the user that no files matching
-    the specified language were found in the selected scopes, along with
-    helpful tips for resolving the issue.
-
-    Args:
-        e (EmptyInventoryError): The exception that was raised, containing
-            error details.
-        language (SupportedLanguage): The target language that was being scanned.
-
-    Raises:
-        typer.Exit: Always raises with exit code 1 to terminate the application.
-    """
-    pr("[yellow]⚠️  No files found[/yellow]")
-    pr(
-        f"No files matching [green]{language}[/green] were found in the selected scopes."
-    )
-    pr(
-        "\n[yellow]Tip:[/yellow] Try selecting different scopes or verify the repository contains files for this language."
-    )
-    raise typer.Exit(code=1) from e
 
 
 def print_temp_file_err(e: TempFileError) -> None:
@@ -199,6 +198,97 @@ def print_temp_file_err(e: TempFileError) -> None:
     pr(f"Error Context: {e}")
     pr(f"Diagnostics: {e.diagnostic_info}")
     raise typer.Exit(code=1) from e
+
+
+def print_file_io_err(e: FileIOError) -> None:
+    """
+    Displays a user-friendly error message for file I/O operation failures.
+
+    Prints formatted error messages to inform the user about file read/write
+    issues, including the file path and diagnostic information for troubleshooting.
+
+    Args:
+        e (FileIOError): The exception that was raised, containing error details
+            and file path information.
+
+    Raises:
+        typer.Exit: Always raises with exit code 1 to terminate the application.
+    """
+    pr("❌ [bold red]File I/O Error[/bold red]")
+    pr(f"The app encountered an error while working with files: {e.message}")
+    if e.file_path:
+        pr(f"File path: [yellow]{e.file_path}[/yellow]")
+
+    pr("\n[yellow]Quick Fix:[/yellow] Check file permissions and available disk space.")
+    if e.original_exception:
+        pr(f"\nTechnical details: {e.original_exception}")
+
+    raise typer.Exit(code=1) from e
+
+
+def print_unexpected_err(e: Exception) -> None:
+    """
+    Displays a user-friendly error message for unexpected errors.
+
+    This catch-all handler ensures that any unhandled exceptions are presented
+    to the user in a friendly way, rather than showing a raw Python stack trace.
+    It provides helpful guidance and diagnostic information for reporting issues.
+
+    Args:
+        e (Exception): The unexpected exception that was raised.
+
+    Raises:
+        typer.Exit: Always raises with exit code 1 to terminate the application.
+    """
+    pr("❌ [bold red]Unexpected Error[/bold red]")
+    pr("An unexpected error occurred while processing your request.")
+    pr(f"\n[yellow]Error Type:[/yellow] {type(e).__name__}")
+    pr(f"[yellow]Error Message:[/yellow] {str(e)}")
+
+    pr("\n[yellow]What to do:[/yellow]")
+    pr("1. Check that your repository is valid and accessible")
+    pr("2. Ensure you have sufficient disk space and permissions")
+    pr("3. Try running the command again")
+    pr("4. If the problem persists, please report this issue")
+
+    pr("\n--- PLEASE REPORT THIS ---")
+    pr(f"Error Type: {type(e).__name__}")
+    pr(f"Error Message: {e}")
+    if hasattr(e, "__cause__") and e.__cause__:
+        pr(f"Caused by: {e.__cause__}")
+
+    raise typer.Exit(code=1) from e
+
+
+def make_language_selection() -> SupportedLanguage:
+    """
+    Interactively prompts the user to select a supported programming language.
+    This is invoked when the user does not provide the `--language` argument via the CLI.
+    It displays a list of languages defined in `SupportedLanguages`.
+
+    Returns:
+    SupportedLanguages: The enum member corresponding to the user's selection.
+    """
+
+    pr(
+        "\n[bold green]Select the programming language for which to generate the bridge.[/bold green]"
+    )
+
+    questions = [
+        inquirer.List(
+            "language",
+            message="Hit [ENTER] to make your selection",
+            choices=list(SupportedLanguage),
+        ),
+    ]
+
+    answers = inquirer.prompt(questions, theme=GreenPassion())
+
+    if not answers:
+
+        raise typer.Exit()
+
+    return SupportedLanguage(answers["language"])
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 """
-Progress reporting callback protocol for decoupling UI from business logic.
+Progress reporting protocol for decoupling UI from business logic.
 
 This module defines a protocol that allows progress reporting to be abstracted
 away from the core processing logic, making it easier to test and swap
@@ -7,7 +7,7 @@ implementations (e.g., Rich UI, logging, metrics).
 """
 
 from types import TracebackType
-from typing import Optional, Protocol
+from typing import Protocol
 
 from rich.progress import Progress, TaskID
 from ui.progress import (
@@ -18,9 +18,9 @@ from ui.progress import (
 )
 
 
-class ProgressCallback(Protocol):
+class ProgressDisplay(Protocol):
     """
-    Protocol for progress reporting callbacks.
+    Protocol for progress reporting.
 
     This protocol defines the interface for reporting progress during long-running
     operations. Implementations can provide UI updates (Rich), logging, metrics,
@@ -34,28 +34,29 @@ class ProgressCallback(Protocol):
     5. Context manager exit (__exit__)
     """
 
-    def __enter__(self) -> "ProgressCallback":
-        """Enter the progress callback context."""
+    def __enter__(self) -> "ProgressDisplay":
+        """Enter the progress context."""
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
-        """Exit the progress callback context."""
+        """Exit the progress context."""
 
-    def on_start(self, description: str, total: int) -> None:
+    def on_start(self, description: str, total: int | None) -> None:
         """
         Initialize progress reporting for a new task.
 
         Args:
-            total: Total number of items to process.
             description: Initial description text to display.
+            total: Total number of items to process. If None, progress is
+                indeterminate.
         """
 
     def on_update(
-        self, *, advance: Optional[int] = None, description: Optional[str] = None
+        self, *, advance: int | None = None, description: str | None = None
     ) -> None:
         """
         Update progress by advancing the counter, updating description, or both.
@@ -73,18 +74,23 @@ class ProgressCallback(Protocol):
             - `on_update(advance=5, description="...")` - both
         """
 
-    def on_complete(self, description: str, completed: int) -> None:
+    def on_complete(
+        self, description: str, completed: int, total: int | None = None
+    ) -> None:
         """
         Mark the task as complete.
 
         Args:
             description: Final description text to display.
+            completed: Number of items that were completed.
+            total: Optional total count. If provided, updates the total count
+                for the task. If None, uses the existing total.
         """
 
 
-class RichProgressCallback:
+class RichProgressDisplay:
     """
-    Rich UI implementation of ProgressCallback.
+    Rich UI implementation of ProgressDisplay
 
     This class wraps the existing Rich progress bar functionality, allowing
     the core processing logic to report progress without directly depending
@@ -92,16 +98,16 @@ class RichProgressCallback:
     """
 
     def __init__(self) -> None:
-        """Initialize the callback. Progress instance is created lazily."""
-        self._progress: Optional[Progress] = None
-        self._task: Optional[TaskID] = None
+        """Initialize RPD. Progress instance is created lazily."""
+        self._progress: Progress | None = None
+        self._task: TaskID | None = None
 
-    def __enter__(self) -> "RichProgressCallback":
+    def __enter__(self) -> "RichProgressDisplay":
         """
         Enter the progress context (creates the Rich Progress instance).
 
-        This allows RichProgressCallback to be used as a context manager,
-        matching the pattern: `with RichProgressCallback() as callback:`
+        This allows RichProgressDisplay to be used as a context manager,
+        matching the pattern: `with RichProgressDisplay() as rpd:`
         """
         self._progress = create_progress()
         self._progress.__enter__()
@@ -109,39 +115,60 @@ class RichProgressCallback:
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         """Exit the progress context (cleans up Rich Progress)."""
         if self._progress:
             self._progress.__exit__(exc_type, exc_val, exc_tb)
 
-    def on_start(self, description: str, total: Optional[int]) -> None:
+    def on_start(self, description: str, total: int | None) -> None:
         """
         Initialize progress reporting for a new task.
 
         Creates a new task in the Rich progress bar.
+
+        Args:
+            description: Initial description text to display.
+            total: Total number of items to process. If None, progress is
+                indeterminate.
+
+        Raises:
+            RuntimeError: If not used as a context manager (progress instance
+                not initialized).
         """
         if not self._progress:
             raise RuntimeError(
-                "RichProgressCallback must be used as a context manager. "
-                "Use: with RichProgressCallback() as callback:"
+                "RichProgressDisplay must be used as a context manager. "
+                "Use: with RichProgressDisplay() as rpd:"
             )
         self._task = create_task(self._progress, description, total=total)
 
     def on_update(
-        self, *, advance: Optional[int] = None, description: Optional[str] = None
+        self, *, advance: int | None = None, description: str | None = None
     ) -> None:
         """
         Update progress by advancing the counter, updating description, or both.
 
         If description is provided, also updates the description with IN_PROGRESS state.
+
+        Args:
+            advance: Optional number of items processed since last update.
+                If None, progress counter is not advanced.
+            description: Optional description text to update. If None, keeps
+                existing description. When provided, the description is styled
+                with IN_PROGRESS state (magenta color).
+
+        Raises:
+            RuntimeError: If not used as a context manager (progress instance
+                not initialized) or if on_start() was not called first.
+            ValueError: If neither advance nor description is provided.
         """
         if not self._progress:
             raise RuntimeError(
-                "RichProgressCallback must be used as a context manager. "
-                "Use: with RichProgressCallback() as callback:"
+                "RichProgressDisplay must be used as a context manager. "
+                "Use: with RichProgressDisplay() as rpd:"
             )
         if self._task is None:
             raise RuntimeError("on_start() must be called before on_update()")
@@ -171,17 +198,23 @@ class RichProgressCallback:
             )
 
     def on_complete(
-        self, description: str, completed: int, total: Optional[int] = None
+        self, description: str, completed: int, total: int | None = None
     ) -> None:
         """
         Mark the task as complete.
 
         Updates the progress bar to show completion state.
+
+        Args:
+            description: Final description text to display.
+            completed: Number of items that were completed.
+            total: Optional total count. If provided, updates the total count
+                for the task. If None, uses the existing total.
         """
         if not self._progress:
             raise RuntimeError(
-                "RichProgressCallback must be used as a context manager. "
-                "Use: with RichProgressCallback() as callback:"
+                "RichProgressDisplay must be used as a context manager. "
+                "Use: with RichProgressDisplay() as rpd:"
             )
         if self._task is None:
             raise RuntimeError("on_start() must be called before on_complete()")
@@ -196,28 +229,30 @@ class RichProgressCallback:
         )
 
 
-class NoOpProgressCallback:
+class NoOpProgressDisplay:
     """
-    No-op implementation of ProgressCallback for testing.
+    No-op implementation of ProgressDisplay for testing.
 
     This implementation does nothing, allowing tests to run without
     Rich UI dependencies or actual progress bars.
     """
 
-    def __enter__(self) -> "NoOpProgressCallback":
-        """Enter the progress callback context (no-op)."""
+    def __enter__(self) -> "NoOpProgressDisplay":
+        """Enter the progress context (no-op)."""
         return self
 
     def __exit__(self, *args) -> None:
-        """Exit the progress callback context (no-op)."""
+        """Exit the progress context (no-op)."""
 
-    def on_start(self, description: str, total: int) -> None:
+    def on_start(self, description: str, total: int | None) -> None:
         """No-op: does nothing."""
 
     def on_update(
-        self, *, advance: Optional[int] = None, description: Optional[str] = None
+        self, *, advance: int | None = None, description: str | None = None
     ) -> None:
         """No-op: does nothing."""
 
-    def on_complete(self, description: str, completed: int) -> None:
+    def on_complete(
+        self, description: str, completed: int, total: int | None = None
+    ) -> None:
         """No-op: does nothing."""

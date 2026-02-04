@@ -6,62 +6,78 @@ file discovery and classification operations within the Sential CLI.
 """
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 from pathlib import Path
 
 
-@dataclass()
-class InventoryStats:
-    """
-    Statistics regarding a file inventory scan operation.
-
-    This dataclass stores counts of files that were classified
-    during the discovery phase. It provides a computed total property for convenience.
-
-    Attributes:
-        language_files: The number of source code files found (e.g., .py, .ts files).
-        context_files: The number of context files found (e.g., README.md, package.json).
-    """
-
-    language_files: int
-    context_files: int
-
-    @property
-    def total(self) -> int:
-        """
-        Calculate the total number of valid files found.
-
-        Returns:
-            int: The sum of language_files and context_files.
-        """
-        return self.language_files + self.context_files
-
-
 @dataclass(frozen=True)
-class InventoryResult:
-    """
-    The result of the file discovery and classification operation.
+class ProcessedFile:
+    path: str
+    type: str
+    content: str
 
-    This immutable dataclass encapsulates the output of `get_final_inventory_file`,
-    containing paths to temporary files that list discovered files and statistics
-    about the scan operation. The temporary files contain newline-separated relative
-    file paths that can be used for subsequent processing (e.g., ctags extraction).
+
+class FileCategory(Enum):
+    CONTEXT = "context_file"
+    MANIFEST = "manifest_file"
+    SIGNAL = "signal_file"
+    SOURCE = "source_file"
+    UNKNOWN = "generic_file"
+
+
+@dataclass
+class FileMetadata:
+    """
+    Metadata container for file significance scoring and classification.
+
+    This dataclass stores information about a file's path, computed significance score,
+    and various classification flags that indicate the file's role in the codebase.
+    It also computes derived attributes (normalized names, depth, parent directories)
+    that are used during significance calculation.
 
     Attributes:
-        source_inventory_path: Path to a temporary file containing relative paths
-            of all source code files (language files) that match the target language.
-        context_inventory_path: Path to a temporary file containing relative paths
-            of all context files (documentation, manifests, configs) that were discovered.
-        stats: An InventoryStats instance containing counts of files in each category.
+        file_path: The path to the file (absolute or relative).
+        score: The computed significance score for this file. Higher scores indicate
+            more important files. Defaults to 0.
+        is_context: True if this is a universal context file (e.g., README.md, .cursorrules).
+        is_manifest: True if this file matches a language-specific manifest pattern
+            (e.g., package.json, requirements.txt, .csproj).
+        is_signal: True if this file matches a signal pattern (e.g., main.py, index.ts).
+            Signal files are entry points or key architectural files.
+        is_source: True if this file has a source code extension for the target language.
 
-    Note:
-        This is a frozen dataclass, so instances are immutable after creation.
-        The temporary files referenced by the paths should be cleaned up by the caller.
+    Computed Attributes (set in __post_init__):
+        name_lower: Lowercase filename including extension (e.g., "readme.md").
+        suffix_lower: Lowercase file extension (e.g., ".py", ".ts").
+        stem_lower: Lowercase filename without extension (e.g., "main" from "main.py").
+            Note: For multi-extension files like "file.tar.gz", stem is "file.tar".
+        depth: Number of path components (directory levels). Root-level files have depth=1.
+        file_parents: Set of lowercase parent directory names for matching against
+            ignore patterns (e.g., {"src", "utils"} for "src/utils/file.py").
     """
 
-    source_inventory_path: Path
-    context_inventory_path: Path
-    stats: InventoryStats
+    file_path: Path
+    category: FileCategory = FileCategory.UNKNOWN
+    score: int = 0
+
+    def __post_init__(self):
+        """Compute derived attributes from the file path."""
+        self.name_lower = self.file_path.name.lower()  # includes extension
+        self.suffix_lower = self.file_path.suffix.lower()
+        self.depth = len(self.file_path.parts)
+        self.file_parents = {str(p).lower() for p in self.file_path.parent.parts}
+        # Removes extension
+        # Note: if the file is file.tar.gz -> stem is file.tar
+        self.stem_lower = self.file_path.stem.lower()
+
+
+class CategoryProcessedFiles:
+    def __init__(self, category: FileCategory) -> None:
+        self.category: FileCategory = category
+        self.files: list[ProcessedFile] = []
+
+    def append(self, file: ProcessedFile) -> None:
+        self.files.append(file)
 
 
 @dataclass(frozen=True)
@@ -82,19 +98,3 @@ class Ctag:
     path: str
     kind: str
     name: str
-
-
-class RecordType(StrEnum):
-    """
-    Enumeration of record types in the JSONL output format.
-
-    This enum defines the different types of records that can appear in the
-    generated JSONL payload file. Each record type represents a different
-    category of content extracted from the repository.
-
-    Attributes:
-        CONTEXT_FILE: Represents a context file record containing full file content
-            (e.g., README.md, package.json, configuration files).
-    """
-
-    CONTEXT_FILE = "context_file"
