@@ -42,13 +42,16 @@ import inquirer  # type: ignore
 from inquirer.themes import GreenPassion  # type: ignore
 from adapters.git import SubprocessGitClient
 from constants import SupportedLanguage
+from core.doc_generator import process_syllabus_result
 from core.exceptions import (
     FileIOError,
     FileWriteError,
     InvalidFilePathError,
     TempFileError,
 )
-from core.file_io import FilesystemFileWriter
+from core.file_io import FilesystemFileReader, FilesystemFileWriter
+from core.llm import ask_llm, get_config_file, save_config
+from core.prompts import SYLLABUS_GENERATION_PROMPT, parse_syllabus_response
 from core.processing import process_files
 from core.categorization import categorize_files
 
@@ -71,6 +74,14 @@ def main(
         str | None,
         typer.Option(help=f"Available languages: {', '.join(list(SupportedLanguage))}"),
     ] = None,
+    configure: Annotated[
+        bool,
+        typer.Option(
+            "--configure",
+            "-c",
+            help="Edit model and API key configuration (shows current values for editing).",
+        ),
+    ] = False,
 ):
     """
     The main entry point for the Sential CLI application.
@@ -90,6 +101,9 @@ def main(
     Raises:
         typer.Exit: If the path is not a git repository or if an unsupported language is selected.
     """
+    if configure:
+        edit_model_config()
+        raise typer.Exit(0)
 
     # Validate path is git repository
     git_client = SubprocessGitClient(path)
@@ -115,8 +129,19 @@ def main(
         print_temp_file_err(e)
         return
 
+    config = get_config_file()
+
+    model = config.get("model")
+    api_key = config.get("api_key")
+
+    if not model or not api_key:
+        make_model_selection()
+        config = get_config_file()
+        model = config.get("model")
+        api_key = config.get("api_key")
+
     try:
-        prompt_data = {"type": "prompt", "content": "<prompt>"}
+        prompt_data = {"type": "prompt", "content": SYLLABUS_GENERATION_PROMPT}
         fw.write_file(json.dumps(prompt_data) + "\n", mode="w")
 
         files_in_path = git_client.count_files()
@@ -132,7 +157,11 @@ def main(
             "paths": [str(p) for p in file_paths_list],
         }
         fw.append_jsonl_line(file_paths_data)
-        pr(f"\n[green]✓ Processing complete. Output: {fw.file_path}[/green]")
+        if fw.file_path:
+            prompt = FilesystemFileReader().read_file(fw.file_path)
+            resp = ask_llm(model, api_key, prompt)
+            syllabus_data = parse_syllabus_response(resp, path)
+            process_syllabus_result(path, syllabus_data)
     except TempFileError as e:
         print_temp_file_err(e)
     except (FileWriteError, InvalidFilePathError) as e:
@@ -289,6 +318,84 @@ def make_language_selection() -> SupportedLanguage:
         raise typer.Exit()
 
     return SupportedLanguage(answers["language"])
+
+
+def make_model_selection() -> None:
+    """
+    Interactively prompts the user for model name and API key, then saves them
+    via save_config. Blocks until both values are entered and config is saved.
+    On any error or cancellation, prints a message and exits the process.
+    """
+    pr("\n[bold green]Configure model and API key.[/bold green]\n")
+
+    questions = [
+        inquirer.Text("model", message="Enter model name"),
+        inquirer.Text("api_key", message="Enter API key"),
+    ]
+
+    answers = inquirer.prompt(questions, theme=GreenPassion())
+
+    if not answers:
+        raise typer.Exit(code=1)
+
+    model = (answers.get("model") or "").strip()
+    api_key = (answers.get("api_key") or "").strip()
+
+    if not model or not api_key:
+        pr("\n[bold][red]Error:[/bold] Model name and API key are required.")
+        raise typer.Exit(code=1)
+
+    try:
+        save_config(model, api_key)
+    except (FileWriteError, InvalidFilePathError) as e:
+        print_file_io_err(e)
+    except OSError as e:
+        pr("[red]Error:[/red] Could not save config.")
+        pr(f"[yellow]{e}[/yellow]")
+        raise typer.Exit(code=1) from e
+
+    pr("[green]Config saved.[/green]\n")
+
+
+def edit_model_config() -> None:
+    """
+    Interactively prompts for model name and API key with current config
+    prepopulated, so the user can edit and save. Same flow as make_model_selection
+    but with existing values as defaults. On cancel or invalid input, exits.
+    """
+    config = get_config_file()
+    current_model = (config.get("model") or "").strip()
+    current_api_key = (config.get("api_key") or "").strip()
+
+    pr("\n[bold green]Edit model and API key.[/bold green]\n")
+
+    questions = [
+        inquirer.Text("model", message="Enter model name", default=current_model),
+        inquirer.Text("api_key", message="Enter API key", default=current_api_key),
+    ]
+
+    answers = inquirer.prompt(questions, theme=GreenPassion())
+
+    if not answers:
+        raise typer.Exit(code=1)
+
+    model = (answers.get("model") or "").strip()
+    api_key = (answers.get("api_key") or "").strip()
+
+    if not model or not api_key:
+        pr("\n[bold][red]Error:[/bold] Model name and API key are required.")
+        raise typer.Exit(code=1)
+
+    try:
+        save_config(model, api_key)
+    except (FileWriteError, InvalidFilePathError) as e:
+        print_file_io_err(e)
+    except OSError as e:
+        pr("[red]Error:[/red] Could not save config.")
+        pr(f"[yellow]{e}[/yellow]")
+        raise typer.Exit(code=1) from e
+
+    pr("[green]Config saved.[/green]\n")
 
 
 if __name__ == "__main__":

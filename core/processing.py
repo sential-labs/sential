@@ -11,6 +11,7 @@ from core.models import (
     ProcessedFile,
 )
 from core.tokens import (
+    FixedTokenBudget,
     PooledTokenBudget,
     TokenBudget,
     TokenCounter,
@@ -160,4 +161,48 @@ def process_readable_files_for_category(
 
         rpd.on_complete(
             f"✅ Read {files_processed} {category_to_text[category]["name"]}.", 100, 100
+        )
+
+
+def process_chapter_files(
+    files: list[Path],
+    chapter_title: str,
+    counter: TokenCounter,
+    token_budget: FixedTokenBudget,
+    status: CategoryProcessedFiles,
+    progress_display: ProgressDisplay | None = None,
+    file_reader: FileReader | None = None,
+) -> None:
+
+    category = FileCategory.CHAPTER_FILE
+    files_processed = 0
+
+    token_budget.reset()
+
+    reader = file_reader if file_reader is not None else FilesystemFileReader()
+    rich_progress_display = (
+        progress_display if progress_display is not None else RichProgressDisplay()
+    )
+
+    with rich_progress_display as rpd:
+        rpd.on_start(f"Reading relevant files for {chapter_title} chapter...", None)
+
+        for fp in files:
+            try:
+                content = reader.read_file(fp)
+            except FileReadError as e:
+                # Log the error but continue processing other files
+                pr(f"[yellow]⚠ Warning:[/yellow] Failed to read file {fp}: {e.message}")
+                continue
+
+            token_usage = counter.count(content)
+            if token_budget.can_afford(token_usage):
+                token_budget.spend(token_usage)
+                status.append(ProcessedFile(str(fp), category.value, content))
+                files_processed += 1
+            else:
+                break
+
+        rpd.on_complete(
+            f"✅ Read {files_processed} files for chapter {chapter_title}", 100, 100
         )

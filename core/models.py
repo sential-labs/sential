@@ -22,6 +22,7 @@ class FileCategory(Enum):
     MANIFEST = "manifest_file"
     SIGNAL = "signal_file"
     SOURCE = "source_file"
+    CHAPTER_FILE = "chapter_file"
     UNKNOWN = "generic_file"
 
 
