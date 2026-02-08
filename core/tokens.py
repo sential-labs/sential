@@ -178,6 +178,50 @@ class PooledTokenBudget:
         self.pool -= count
 
 
+class FixedTokenBudget:
+    """
+    A simple token budget with a fixed cap, resettable for each new "run"
+    (e.g. per chapter). Use for limiting how much content is read in a single
+    batch (e.g. chapter file content) so the total stays under context limits.
+    """
+
+    def __init__(self, max_tokens: int, ctx_ratio: float):
+        """
+        Initialize the budget with a cap.
+
+        Args:
+            max_tokens: Maximum tokens allowed for this run.
+        """
+        self.max = max_tokens
+        self.ctx_ratio = ctx_ratio
+        self.remaining = self.max * self.ctx_ratio
+
+    def reset(
+        self, max_tokens: int | None = None, ctx_ratio: float | None = None
+    ) -> None:
+        """
+        Reset the budget. Optionally set a new cap and ratio.
+
+        Args:
+            max_tokens: If provided, set the cap to this value for future
+                runs. If None, reset to the initial max_tokens from __init__.
+            ctx_ratio: If provided, set the remaining value
+        """
+        if ctx_ratio:
+            self.ctx_ratio = ctx_ratio
+        if max_tokens:
+            self.max = max_tokens
+        self.remaining = self.max * self.ctx_ratio
+
+    def can_afford(self, count: int) -> bool:
+        """Return True if the remaining budget is at least count."""
+        return self.remaining >= count
+
+    def spend(self, count: int) -> None:
+        """Decrease the remaining budget by count."""
+        self.remaining -= count
+
+
 class MockTokenBudget:
     """
     Mock implementation of TokenBudget for testing.
