@@ -1,15 +1,12 @@
 {
   "name": "sential",
   "version": "0.2.0",
-  "description": "**Sential is Source Available. It is free for personal use and open for contribution. For commercial use in teams > 3, please [contact us](mailto:florin@sential.ai) or see LICENSE.**",
-  "main": "index.js",
-  "directories": {
-    "test": "tests"
-  },
+  "description": "Understand any codebase, deeply.",
+  "type": "module",
   "scripts": {
-    "dev": "tsx src/cli.ts",
-    "build": "tsc",
-    "start": "node dist/cli.js"
+    "dev": "bun src/cli.ts",
+    "build": "bun build ./src/cli.ts --compile --outfile bin/sential",
+    "start": "./bin/sential"
   },
   "repository": {
     "type": "git",
@@ -17,8 +14,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "type": "module",
+  "license": "BSL",
   "bugs": {
     "url": "https://github.com/sential-labs/sential/issues"
   },
@@ -32,8 +28,11 @@
     "openai": "^6.19.0"
   },
   "devDependencies": {
-    "@types/node": "^25.2.2",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "@types/bun": "latest"
+  },
+  "module": "index.ts",
+  "private": true,
+  "peerDependencies": {
+    "typescript": "^5"
   }
 }

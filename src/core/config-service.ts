@@ -1,26 +1,33 @@
 import envPaths from "env-paths";
 import path from "node:path";
-import fs from "fs";
-import { fileExists } from "../utils.js";
+import fs from "node:fs/promises";
 import { SentialError } from "../errors.js";
 import type { ConfigData } from "./types.js";
 
 const paths = envPaths("sential", { suffix: "" });
 
 export class ConfigService {
-  private readonly configPath = path.join(paths.config, "settings.json");
-  private readonly configDir = paths.config;
-  private data: ConfigData | null = null;
+  private constructor(
+    private readonly configPath: string,
+    private readonly configDir: string,
+    private data: ConfigData | null,
+  ) {}
 
-  constructor() {
-    if (fileExists(this.configPath)) {
-      this.data = this.load();
+  public static async create(): Promise<ConfigService> {
+    const configPath = path.join(paths.config, "settings.json");
+    const configDir = paths.config;
+    let data: ConfigData | null = null;
+
+    if (await Bun.file(configPath).exists()) {
+      data = await ConfigService.load(configPath);
     }
+
+    return new ConfigService(configPath, configDir, data);
   }
 
-  private load(): ConfigData {
+  private static async load(configPath: string): Promise<ConfigData> {
     try {
-      const raw = fs.readFileSync(this.configPath, "utf-8");
+      const raw = await Bun.file(configPath).text();
       return JSON.parse(raw);
     } catch (err: any) {
       throw new SentialError("Config corrupted", `${err.message}`);
@@ -46,15 +53,11 @@ export class ConfigService {
     return this.data.apiKey;
   }
 
-  public save(configData: ConfigData): void {
+  public async save(configData: ConfigData): Promise<void> {
     try {
       this.data = configData;
-      fs.mkdirSync(this.configDir, { recursive: true });
-      fs.writeFileSync(
-        this.configPath,
-        JSON.stringify(this.data, null, 2),
-        "utf-8",
-      );
+      await fs.mkdir(this.configDir, { recursive: true });
+      await Bun.write(this.configPath, JSON.stringify(this.data, null, 2));
     } catch (err: any) {
       throw new SentialError(
         "Failed to save your configuration.",

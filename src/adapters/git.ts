@@ -1,25 +1,27 @@
-import { execSync, spawn } from "node:child_process";
-import { createInterface } from "node:readline";
+import { $ } from "bun";
 import { SentialError } from "../errors.js";
 
 export class GitClient {
   public readonly cwd: string;
   public readonly projectRoot: string;
 
-  constructor() {
-    this.cwd = process.cwd();
-    this.projectRoot = this.findProjectRoot();
+  private constructor(cwd: string, projectRoot: string) {
+    this.cwd = cwd;
+    this.projectRoot = projectRoot;
   }
 
-  public findProjectRoot(): string {
+  public static async create(): Promise<GitClient> {
+    const cwd = process.cwd();
+    const projectRoot = await GitClient.findProjectRoot(cwd);
+    return new GitClient(cwd, projectRoot);
+  }
+
+  private static async findProjectRoot(cwd: string): Promise<string> {
     try {
-      const root = execSync("git rev-parse --show-toplevel", {
-        cwd: this.cwd,
-        encoding: "utf-8",
-        // stdio takes [subprocess.stdin, subprocess.stdout, subprocess.stderr]
-        // we only need stdout
-        stdio: ["ignore", "pipe", "ignore"],
-      });
+      const root = await $`git rev-parse --show-toplevel`
+        .cwd(cwd)
+        .quiet()
+        .text();
       return root.trim();
     } catch (error) {
       throw new SentialError("Sential must be run inside a git repository.");
@@ -27,19 +29,15 @@ export class GitClient {
   }
 
   public async countFiles(): Promise<number> {
-    const child = spawn(
-      "git",
-      ["ls-files", "--cached", "--others", "--exclude-standard", this.cwd],
-      {
-        cwd: this.cwd,
-      },
-    );
-
-    const rl = createInterface({ input: child.stdout });
+    const files =
+      $`git ls-files --cached --others --exclude-standard ${this.cwd}`
+        .cwd(this.cwd)
+        .quiet()
+        .lines();
 
     let count = 0;
 
-    for await (const _ of rl) {
+    for await (const _ of files) {
       count++;
     }
 
@@ -49,18 +47,14 @@ export class GitClient {
   public async getFilePaths(): Promise<Array<string>> {
     const fp = [];
 
-    const child = spawn(
-      "git",
-      ["ls-files", "--cached", "--others", "--exclude-standard", this.cwd],
-      {
-        cwd: this.cwd,
-      },
-    );
+    const files =
+      $`git ls-files --cached --others --exclude-standard ${this.cwd}`
+        .cwd(this.cwd)
+        .quiet()
+        .lines();
 
-    const rl = createInterface({ input: child.stdout });
-
-    for await (const l of rl) {
-      fp.push(l.trim());
+    for await (const f of files) {
+      fp.push(f.trim());
     }
 
     return fp;

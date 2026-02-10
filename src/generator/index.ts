@@ -8,13 +8,13 @@ import { categorizeFiles } from "../core/categorization.js";
 export async function init(): Promise<void> {
   intro(chalk.green.bold("Welcome to sential! 👋"));
 
-  const configService = new ConfigService();
+  const configService = await ConfigService.create();
   if (!configService.isInitialized) {
     const data = await makeModelSelection();
-    configService.save(data);
+    await configService.save(data);
   }
 
-  const gitClient = new GitClient();
+  const gitClient = await GitClient.create();
   const totalFiles = await gitClient.countFiles();
   const filePaths = await gitClient.getFilePaths();
 
