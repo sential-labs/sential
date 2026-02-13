@@ -4,6 +4,7 @@ import { ConfigService } from "../core/config-service.js";
 import { makeLanguageSelection, makeModelSelection } from "./helpers.js";
 import { GitClient } from "../adapters/git.js";
 import { categorizeFiles } from "../core/categorization.js";
+import { getCtagsPath } from "../adapters/ctags.js";
 
 export async function init(): Promise<void> {
   intro(chalk.green.bold("Welcome to sential! 👋"));

@@ -15,6 +15,7 @@ export class ClaudeProvider extends LLMProvider {
       const message = await client.messages.create({
         model: this.model,
         max_tokens: request.maxTokens ?? 4096,
+        temperature: request.temperature ?? 0.3,
         ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
         messages: [{ role: "user", content: request.prompt }],
       });

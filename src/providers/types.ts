@@ -16,4 +16,5 @@ export interface LLMResponse {
 export enum Provider {
   CLAUDE = "claude",
   OPENAI = "openai",
+  GOOGLE = "google",
 }
