@@ -44,7 +44,7 @@ export class GitClient {
     return count;
   }
 
-  public async getFilePaths(): Promise<Array<string>> {
+  public async getFilePaths(): Promise<string[]> {
     const fp = [];
 
     const files =

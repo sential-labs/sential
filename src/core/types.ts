@@ -6,6 +6,18 @@ export interface ConfigData {
   apiKey: string;
 }
 
+export interface ProcessedFile {
+  path: string;
+  type: string;
+  content: string;
+}
+
+export interface Ctag {
+  path: string;
+  kind: string;
+  name: string;
+}
+
 export enum FileCategory {
   CONTEXT = "context_file",
   MANIFEST = "manifest_file",

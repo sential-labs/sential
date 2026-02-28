@@ -1,14 +1,14 @@
-import { log, progress } from "@clack/prompts";
+import { log, progress, taskLog } from "@clack/prompts";
 import type { SupportedLanguage } from "../types.js";
 import { FileMetadata } from "./file-metadata.js";
 import { FileCategory } from "./types.js";
 import chalk from "chalk";
 
 export function categorizeFiles(
-  filePaths: Array<string>,
+  filePaths: string[],
   totalFiles: number,
   language: SupportedLanguage,
-): Partial<Record<FileCategory, Array<FileMetadata>>> {
+): Partial<Record<FileCategory, FileMetadata[]>> {
   const filesByCategory: Partial<Record<FileCategory, FileMetadata[]>> = {
     [FileCategory.CONTEXT]: [],
     [FileCategory.MANIFEST]: [],
@@ -16,23 +16,18 @@ export function categorizeFiles(
     [FileCategory.SOURCE]: [],
   };
 
-  log.info(chalk.magenta.bold("🔍 Sifting through your codebase..."));
-
-  const prog = progress({
-    style: "heavy",
-    max: totalFiles,
+  const log = taskLog({
+    title: chalk.magenta.bold("🔍 Sifting through your codebase..."),
+    limit: 2,
+    retainLog: false,
   });
 
   let itemsProcessed = 0;
-  const advanceIncrement = Math.max(1, Math.trunc(totalFiles * 0.1));
 
-  prog.start("Finding interesting files...");
+  log.message("Finding interesting files...");
 
   for (const fp of filePaths) {
     itemsProcessed++;
-    if (itemsProcessed % advanceIncrement == 0) {
-      prog.advance(advanceIncrement);
-    }
 
     const fileMetadata = new FileMetadata(fp, language);
     if (fileMetadata.category == FileCategory.UNKNOWN) {
@@ -46,7 +41,7 @@ export function categorizeFiles(
     ([_, v]) => v,
   ).length;
 
-  prog.stop(`Found ${keptFilesCount} relevant files.`);
+  log.success(`Found ${keptFilesCount} relevant files.`);
 
   return filesByCategory;
 }
